@@ -1,0 +1,10 @@
+{
+  "appId": "com.george.pwa",
+  "appName": "George PWA",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "http://10.0.2.2:3030",
+    "cleartext": true
+  }
+}

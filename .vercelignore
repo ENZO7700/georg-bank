@@ -1,0 +1,4 @@
+*.zip
+*.backup
+test-results/
+playwright-report/
