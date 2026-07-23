@@ -10,7 +10,7 @@ export const GUEST_USER_PASSWORD =
 
 export const GUEST_USER_NAME = 'Peter'
 
-export function guestLoginPath(from = '/dashboard') {
+export function guestLoginPath(from = '/dashboard2') {
   return `/api/auth/guest?from=${encodeURIComponent(from)}`
 }
 

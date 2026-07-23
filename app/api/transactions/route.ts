@@ -8,6 +8,7 @@ import {
   DEMO_DEFAULT_USER_NAME,
 } from '@/lib/demo-user'
 import {
+  DAILY_PAYMENT_LIMIT_EUR,
   dailyLimitSnapshot,
   isOutgoingPaymentType,
   startOfLocalDay,
@@ -270,7 +271,7 @@ export async function POST(req: Request) {
         return NextResponse.json(
           {
             success: false,
-            error: `Denný limit 2000 € je vyčerpaný. Zostáva ${dailyLimit.remainingEur.toFixed(2)} €.`,
+            error: `Denný limit ${DAILY_PAYMENT_LIMIT_EUR} € je vyčerpaný. Zostáva ${dailyLimit.remainingEur.toFixed(2)} €.`,
             dailyLimit,
           },
           { status: 403 }

@@ -12,16 +12,17 @@ import {
   expectTapTargetMinSize,
 } from '../helpers/iphone-mobile'
 
-test.describe('iPhone 17 Air – Dashboard', () => {
+test.describe('iPhone – Dashboard', () => {
   test('dashboard-001: available after login', async ({ page }) => {
     await page.goto('/dashboard')
     await expect(page).toHaveURL(/dashboard/)
     await expect(page).toHaveTitle(/George/i)
   })
 
-  test('dashboard-002: portrait viewport is iPhone Air width', async ({ page }) => {
+  test('dashboard-002: portrait viewport matches modern iPhone preset', async ({ page }) => {
     await page.goto('/dashboard')
-    await expectPortraitViewport(page, 410, 430)
+    // iPhone 17 Pro: 402, iPhone Air: 420 CSS px
+    await expectPortraitViewport(page, 390, 430)
     await expectNoHorizontalOverflow(page)
   })
 
@@ -52,7 +53,7 @@ test.describe('iPhone 17 Air – Dashboard', () => {
     }
   })
 
-  test('dashboard-007: menu overlay fits Air width', async ({ page }) => {
+  test('dashboard-007: menu overlay fits viewport', async ({ page }) => {
     await page.goto('/dashboard')
     await openDashboardMenu(page)
     const history = page.getByRole('button', { name: /^História$/i }).first()

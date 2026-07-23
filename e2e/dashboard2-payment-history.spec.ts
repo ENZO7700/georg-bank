@@ -1,10 +1,22 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import { enterPin, loginWithPin } from './helpers/dashboard2'
 
 /**
  * Po Autorizovať cez George kľúč sa transakcia zobrazí v histórii na Prehľade
  * s detailom (note, IBAN, VS) – ako v starom dashboarde.
+ *
+ * After DB reload, GET maps both `recipient` and `note` from `description`
+ * (name + IBAN + VS), so bare getByText(recipient) matches title + subtitle
+ * (strict mode). Prefer the txn-row button.
  */
+function historyRow(page: Page, recipient: string): Locator {
+  return page
+    .locator('#payment-history')
+    .locator('[data-testid^="txn-row-"]')
+    .filter({ hasText: recipient })
+    .first()
+}
+
 test.describe('dashboard2 – história platieb po autorizácii', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -19,7 +31,7 @@ test.describe('dashboard2 – história platieb po autorizácii', () => {
     })
   })
 
-  async function clearGeorgeStorage(page: import('@playwright/test').Page) {
+  async function clearGeorgeStorage(page: Page) {
     await page.addInitScript(() => {
       // Only wipe once per document load when flag not set — reload persistence test
       // sets sessionStorage flag so history survives.
@@ -53,17 +65,16 @@ test.describe('dashboard2 – história platieb po autorizácii', () => {
     await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
     await downloadPromise
 
-    // História – nový riadok hore (exact title only; IBAN subtitle also contains name)
-    const history = page.locator('#payment-history')
-    await expect(history.getByText(recipient, { exact: true })).toBeVisible({ timeout: 10000 })
-    await expect(history.getByText(/0[,.]15/).first()).toBeVisible()
+    const row = historyRow(page, recipient)
+    await expect(row).toBeVisible({ timeout: 10000 })
+    await expect(row.getByText(/0[,.]15/)).toBeVisible()
 
     // Filter Odoslané
     await page.getByRole('button', { name: 'Odoslané', exact: true }).click()
-    await expect(history.getByText(recipient, { exact: true })).toBeVisible()
+    await expect(row).toBeVisible()
 
     // Detail
-    await history.getByText(recipient, { exact: true }).click()
+    await row.click()
     const detail = page.locator('#txn-detail-modal')
     await expect(detail.getByText('Detail prevodu')).toBeVisible()
     await expect(detail.getByText('Poznámka hist')).toBeVisible()
@@ -99,10 +110,6 @@ test.describe('dashboard2 – história platieb po autorizácii', () => {
     await page.locator('#pay-iban').fill('SK9009000000000054321098')
     await page.locator('#pay-amount').fill('0.08')
 
-    // After reload, list may come from API where description embeds IBAN after the name.
-    // Match unique recipient as a prefix, not exact-only.
-    const historyRow = page.locator('#payment-history').getByText(recipient).first()
-
     const downloadPromise = page.waitForEvent('download', { timeout: 20000 })
     const postPromise = page
       .waitForResponse(
@@ -117,23 +124,24 @@ test.describe('dashboard2 – história platieb po autorizácii', () => {
     await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
     await downloadPromise
     await postPromise
-    await expect(historyRow).toBeVisible({ timeout: 10000 })
+    await expect(historyRow(page, recipient)).toBeVisible({ timeout: 10000 })
 
-    // Ensure localStorage save effect flushed (fallback when DB is empty)
-    await page.waitForTimeout(400)
-    const stored = await page.evaluate(() => localStorage.getItem('george_pwa_state'))
-    expect(stored).toBeTruthy()
-    expect(stored!).toContain(recipient)
+    // Poll until save effect has written LS (fallback when DB is empty)
+    await expect
+      .poll(async () => page.evaluate(() => localStorage.getItem('george_pwa_state')), {
+        timeout: 5000,
+      })
+      .toContain(recipient)
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     // po reload treba znova PIN (isSimulatorLoggedIn nie je persistovaný)
     await expect(page.getByText(/Zadajte bezpečnostný PIN/i)).toBeVisible({ timeout: 15000 })
     await enterPin(page, '666666')
 
-    await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible({ timeout: 15000 })
-    // Prefer DB or localStorage — row title may be "Persist xxx" or "Persist xxx IBAN: …"
-    await expect(
-      page.locator('#payment-history').getByText(recipient).first()
-    ).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible({
+      timeout: 15000,
+    })
+    // DB description may be "Persist xxx IBAN: …" — row filter still matches unique prefix
+    await expect(historyRow(page, recipient)).toBeVisible({ timeout: 15000 })
   })
 })

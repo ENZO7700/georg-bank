@@ -7,12 +7,12 @@ import {
   expectViewportMeta,
 } from '../helpers/iphone-mobile'
 
-test.describe('iPhone 17 Air – Auth', () => {
+test.describe('iPhone – Auth', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test('auth-001: portrait viewport is iPhone Air width', async ({ page }) => {
-    // Playwright iPhone Air: 420 CSS px wide
-    await expectPortraitViewport(page, 410, 430)
+  test('auth-001: portrait viewport matches modern iPhone preset', async ({ page }) => {
+    // iPhone 17 Pro: 402, iPhone Air: 420 CSS px
+    await expectPortraitViewport(page, 390, 430)
   })
 
   test('auth-002: site gate unlocks app on mobile', async ({ page }) => {

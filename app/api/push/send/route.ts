@@ -1,3 +1,5 @@
+import { appendFile, mkdir } from 'fs/promises'
+import path from 'path'
 import { NextResponse } from 'next/server'
 import webpush from 'web-push'
 import { db } from '@/lib/db'
@@ -7,6 +9,7 @@ import { eq } from 'drizzle-orm'
 const vapidPublic = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()
 const vapidPrivate = process.env.VAPID_PRIVATE_KEY?.trim()
 const vapidConfigured = Boolean(vapidPublic && vapidPrivate)
+const DEBUG_LOG = path.join(process.cwd(), '.cursor', 'debug-9365c0.log')
 
 if (vapidConfigured) {
   webpush.setVapidDetails(
@@ -22,14 +25,50 @@ function skip(reason: string) {
   return new NextResponse(null, { status: 204 })
 }
 
+async function agentLog(
+  hypothesisId: string,
+  location: string,
+  message: string,
+  data: Record<string, unknown> = {}
+) {
+  // #region agent log
+  try {
+    await mkdir(path.dirname(DEBUG_LOG), { recursive: true })
+    await appendFile(
+      DEBUG_LOG,
+      `${JSON.stringify({
+        sessionId: '9365c0',
+        runId: 'push-debug',
+        hypothesisId,
+        location,
+        message,
+        data,
+        timestamp: Date.now(),
+      })}\n`,
+      'utf8'
+    )
+  } catch {
+    /* ignore */
+  }
+  // #endregion
+}
+
 export async function POST(req: Request) {
   try {
+    await agentLog('H1-H3', 'app/api/push/send/route.ts:POST', 'push send entered', {
+      pushEnabled: process.env.PUSH_NOTIFICATIONS_ENABLED ?? null,
+      vapidConfigured,
+      host: req.headers.get('host'),
+    })
+
     // Opt-in only — default off so dashboards never spam /api/push/send.
     if (process.env.PUSH_NOTIFICATIONS_ENABLED !== 'true') {
+      await agentLog('H2', 'app/api/push/send/route.ts:skip-disabled', 'returning 204 push disabled')
       return skip('PUSH_NOTIFICATIONS_ENABLED is not true')
     }
 
     if (!vapidConfigured) {
+      await agentLog('H3', 'app/api/push/send/route.ts:skip-vapid', 'returning 204 no vapid')
       return skip('VAPID keys not configured')
     }
 
@@ -43,7 +82,7 @@ export async function POST(req: Request) {
     const payload = JSON.stringify({
       title,
       body: message,
-      url: '/dashboard',
+      url: '/dashboard2',
       timestamp: Date.now(),
     })
 
@@ -58,6 +97,9 @@ export async function POST(req: Request) {
       }
     } catch (dbErr) {
       console.warn('[Push API] Subscription lookup failed (no DB):', dbErr)
+      await agentLog('H4', 'app/api/push/send/route.ts:db-catch', 'db lookup soft-skip', {
+        err: dbErr instanceof Error ? dbErr.message : String(dbErr),
+      })
       return skip('subscription store unavailable')
     }
 
@@ -78,7 +120,7 @@ export async function POST(req: Request) {
         )
         sentCount++
       } catch (err) {
-        console.error('[Push API] Error sending push to endpoint:', sub.endpoint, err)
+        console.warn('[Push API] Error sending push to endpoint:', sub.endpoint, err)
         failedCount++
       }
     }
@@ -93,6 +135,9 @@ export async function POST(req: Request) {
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error'
     console.warn('[Push API] Soft-fail (no 500):', errMsg)
+    await agentLog('H5', 'app/api/push/send/route.ts:outer-catch', 'outer soft-fail 204', {
+      errMsg,
+    })
     return skip(errMsg)
   }
 }

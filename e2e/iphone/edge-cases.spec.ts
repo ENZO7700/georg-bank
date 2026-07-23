@@ -1,6 +1,6 @@
 import { test } from '@playwright/test'
 
-test.describe('iPhone 17 Air – Edge cases', () => {
+test.describe('iPhone – Edge cases', () => {
   test.skip('edge-cases-001: offline gate page', async () => {
     // Scaffold – implement when Edge cases is finalized.
     // Topic: offline gate page

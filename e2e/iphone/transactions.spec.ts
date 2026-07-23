@@ -1,6 +1,6 @@
 import { test } from '@playwright/test'
 
-test.describe('iPhone 17 Air – Transactions', () => {
+test.describe('iPhone – Transactions', () => {
   test.skip('transactions-001: transaction list scroll', async () => {
     // Scaffold – implement when Transactions is finalized.
     // Topic: transaction list scroll

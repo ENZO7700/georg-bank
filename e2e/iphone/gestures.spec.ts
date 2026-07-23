@@ -1,6 +1,6 @@
 import { test } from '@playwright/test'
 
-test.describe('iPhone 17 Air – Gestures', () => {
+test.describe('iPhone – Gestures', () => {
   test.skip('gestures-001: menu open tap target 44px', async () => {
     // Scaffold – implement when Gestures is finalized.
     // Topic: menu open tap target 44px

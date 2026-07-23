@@ -18,6 +18,8 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   themeColor: '#091b3f',
+  // Required for env(safe-area-inset-*) under notch / Dynamic Island (Capacitor WKWebView).
+  viewportFit: 'cover',
 }
 
 export const metadata: Metadata = {

@@ -1,6 +1,6 @@
 import { test } from '@playwright/test'
 
-test.describe('iPhone 17 Air – Export PDF', () => {
+test.describe('iPhone – Export PDF', () => {
   test.skip('export-pdf-001: monthly export button tap', async () => {
     // Scaffold – implement when Export PDF is finalized.
     // Topic: monthly export button tap

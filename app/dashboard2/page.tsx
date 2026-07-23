@@ -403,7 +403,12 @@ export default function GeorgePrototypePage() {
 
       startFaceDetection()
     } catch (err) {
-      console.error('Camera access error:', err)
+      // NotAllowedError is expected in Simulator / denied camera — do not console.error
+      // (Next.js Dev Overlay treats console.error as a blocking "Issue").
+      const name = err instanceof DOMException ? err.name : ''
+      if (name !== 'NotAllowedError') {
+        console.warn('Camera access error:', err)
+      }
       showToast('Webkamera je nedostupná alebo prístup bol zamietnutý. Použite PIN kód 666666.')
       cancelBiometrics()
     }

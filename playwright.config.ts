@@ -1,12 +1,21 @@
 /// <reference types="node" />
 import { defineConfig, devices } from '@playwright/test'
 import { loadEnvConfig } from '@next/env'
+import { nothingPhone1 } from './e2e/devices/nothing-phone-1'
 
 // Load .env / .env.local so SITE_GATE_PASSWORD, TEST_USER_*, etc. work in E2E helpers.
 loadEnvConfig(process.cwd())
 
 const isProduction = !!process.env.BASE_URL
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3030'
+
+const mobileFolderIgnore = [
+  /production-check\.spec\.ts/,
+  /iphone\//,
+  /iphone-14-plus\//,
+  /iphone-17-air\//,
+  /nothing-phone-1\//,
+]
 
 export default defineConfig({
   testDir: './e2e',
@@ -47,7 +56,7 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      testIgnore: [/production-check\.spec\.ts/, /iphone-14-plus\//, /iphone-17-air\//],
+      testIgnore: mobileFolderIgnore,
       use: {
         ...devices['Desktop Chrome'],
         storageState: 'playwright/.auth/user.json',
@@ -56,14 +65,34 @@ export default defineConfig({
     },
     {
       name: 'Mobile Chrome',
-      testIgnore: [/production-check\.spec\.ts/, /iphone-14-plus\//, /iphone-17-air\//],
+      testIgnore: mobileFolderIgnore,
       use: {
         ...devices['Pixel 5'],
         storageState: 'playwright/.auth/user.json',
       },
       dependencies: ['setup'],
     },
-    // Special device suites – only their own folders, official Playwright presets
+    // Modern iPhone suites – shared e2e/iphone/ specs, official Playwright presets
+    {
+      name: 'iPhone 17 Pro',
+      testMatch: /iphone\/.*\.spec\.ts/,
+      use: {
+        ...devices['iPhone 17 Pro'],
+        storageState: 'playwright/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'iPhone Air',
+      testMatch: /iphone\/.*\.spec\.ts/,
+      use: {
+        // Playwright ships "iPhone Air" (iPhone 17 Air family)
+        ...devices['iPhone Air'],
+        storageState: 'playwright/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    },
+    // Legacy – excluded from npm run test:iphone; still runnable via --project
     {
       name: 'iPhone 14 Plus',
       testMatch: /iphone-14-plus\/.*\.spec\.ts/,
@@ -74,14 +103,12 @@ export default defineConfig({
       dependencies: ['setup'],
     },
     {
-      name: 'iPhone 17 Air',
-      testMatch: /iphone-17-air\/.*\.spec\.ts/,
+      name: 'Nothing Phone 1',
+      testMatch: /nothing-phone-1\/.*\.spec\.ts/,
       use: {
-        // Playwright ships "iPhone Air" (iPhone 17 Air family)
-        ...devices['iPhone Air'],
-        storageState: 'playwright/.auth/user.json',
+        ...nothingPhone1,
+        storageState: { cookies: [], origins: [] },
       },
-      dependencies: ['setup'],
     },
   ],
 

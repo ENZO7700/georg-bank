@@ -7,7 +7,7 @@ export const TEST_USER_PASSWORD = process.env.TEST_USER_PASSWORD ?? 'admin@admin
 export const SWAPPED_CARD_ENDINGS = ['1234', '4321', '4444'] as const
 
 export const PROTECTED_DASHBOARD_ROUTES = [
-  '/dashboard',
+  '/dashboard2',
   '/dashboardpayment',
   '/dashboard/payment-orders',
   '/dashboard/assistant',
@@ -21,12 +21,21 @@ export async function passSiteGate(page: Page) {
   if (await questionMark.isVisible().catch(() => false)) {
     await questionMark.click()
   }
-  await page.waitForURL((url) => !url.pathname.includes('/gate'), { timeout: 15000 })
+
+  // Password form (when Tailscale header does not auto-authorize)
+  const passwordInput = page.locator('input[type="password"]')
+  if (await passwordInput.isVisible().catch(() => false)) {
+    await passwordInput.fill(SITE_GATE_PASSWORD)
+    await passwordInput.press('Enter')
+  }
+
+  await page.waitForURL((url) => !url.pathname.includes('/gate'), { timeout: 20000 })
 }
 
 /**
  * Navigácia s automatickým prejdením site gate + guest session.
  * App uses middleware → /api/auth/guest for session when unauthenticated.
+ * `path` may be absolute (https://…) or relative (/dashboard2).
  */
 export async function gotoApp(page: Page, path: string) {
   await page.goto(path, { timeout: 45000, waitUntil: 'domcontentloaded' })
@@ -39,14 +48,21 @@ export async function gotoApp(page: Page, path: string) {
   )
 }
 
+/** Absolute URL navigation with site gate + guest handling. */
+export async function gotoAbsolute(page: Page, url: string) {
+  await gotoApp(page, url)
+}
+
 /**
  * Zabezpečí prihlásenú session (site gate + guest auto-login).
- * Sign-in/sign-up pages redirect to /dashboard; real auth is guest middleware.
+ * Lands on /dashboard2 (legacy /dashboard redirects there).
  */
 export async function login(page: Page) {
-  await gotoApp(page, '/dashboard')
-  await page.waitForURL(/dashboard/, { timeout: 30000 })
-  await expect(page.getByText('SPACE účet').first()).toBeVisible({ timeout: 20000 })
+  await gotoApp(page, '/dashboard2')
+  await page.waitForURL(/dashboard2/, { timeout: 30000 })
+  await expect(page.getByText(/Zadajte bezpečnostný PIN|Prehľad|SPACE účet/i).first()).toBeVisible({
+    timeout: 20000,
+  })
 }
 
 export async function expectGeorgeHeader(page: Page) {
