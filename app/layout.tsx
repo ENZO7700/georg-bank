@@ -91,28 +91,47 @@ export default async function RootLayout({
         <TranslationProvider dictionary={dictionary} locale={locale}>
           {children}
         </TranslationProvider>
-        <Script id="pwa-service-worker" strategy="lazyOnload">
+        <Script id="pwa-service-worker" strategy="afterInteractive">
           {`
-            if ('serviceWorker' in navigator) {
-              window.addEventListener('load', async () => {
-                try {
-                  const reg = await navigator.serviceWorker.register('/service-worker.js');
-                  console.log('[PWA] Service Worker registered, scope:', reg.scope);
-                  reg.addEventListener('updatefound', () => {
-                    const newWorker = reg.installing;
-                    if (newWorker) {
-                      newWorker.addEventListener('statechange', () => {
+            (function registerGeorgeServiceWorker() {
+              if (!('serviceWorker' in navigator)) return;
+              // Secure contexts only (HTTPS or localhost / 127.0.0.1)
+              var host = location.hostname;
+              var isLocal =
+                host === 'localhost' ||
+                host === '127.0.0.1' ||
+                host === '[::1]' ||
+                host.endsWith('.localhost');
+              if (location.protocol !== 'https:' && !isLocal) return;
+
+              var register = function () {
+                navigator.serviceWorker
+                  .register('/service-worker.js')
+                  .then(function (reg) {
+                    console.log('[PWA] Service Worker registered, scope:', reg.scope);
+                    reg.addEventListener('updatefound', function () {
+                      var newWorker = reg.installing;
+                      if (!newWorker) return;
+                      newWorker.addEventListener('statechange', function () {
                         if (newWorker.state === 'activated') {
                           console.log('[PWA] New Service Worker activated');
                         }
                       });
-                    }
+                    });
+                  })
+                  .catch(function (err) {
+                    console.error('[PWA] Service Worker registration failed:', err);
                   });
-                } catch (err) {
-                  console.error('[PWA] Service Worker registration failed:', err);
-                }
-              });
-            }
+              };
+
+              // Register immediately when ready — do not wait for window "load"
+              // (lazyOnload + load already-fired previously skipped registration).
+              if (document.readyState === 'complete') {
+                register();
+              } else {
+                window.addEventListener('load', register, { once: true });
+              }
+            })();
           `}
         </Script>
       </body>

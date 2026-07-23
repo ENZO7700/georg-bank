@@ -66,6 +66,19 @@ export async function login(page: Page) {
 }
 
 export async function expectGeorgeHeader(page: Page) {
+  const width = page.viewportSize()?.width ?? 1280
+  const path = new URL(page.url()).pathname
+  const isDashboard2Shell =
+    path.includes('/dashboard2') || path === '/dashboard' || /\/dashboard\/?$/.test(path)
+
+  // dashboard2: below lg the outer Menu/Odhlásenie chrome is hidden (native full-bleed)
+  if (width < 1024 && isDashboard2Shell) {
+    const pin = page.getByText(/Zadajte bezpečnostný PIN/i)
+    const prehlad = page.getByRole('heading', { name: 'Prehľad', exact: true })
+    await expect(pin.or(prehlad).first()).toBeVisible({ timeout: 20000 })
+    return
+  }
+
   const header = page.locator('header').first()
   await expect(header).toBeVisible()
   await expect(header.getByRole('button', { name: /^Menu$/i })).toBeVisible()
@@ -73,6 +86,16 @@ export async function expectGeorgeHeader(page: Page) {
 }
 
 export async function openDashboardMenu(page: Page) {
+  const width = page.viewportSize()?.width ?? 1280
+  const path = new URL(page.url()).pathname
+  const isDashboard2Shell =
+    path.includes('/dashboard2') || path === '/dashboard' || /\/dashboard\/?$/.test(path)
+
+  if (width < 1024 && isDashboard2Shell) {
+    throw new Error(
+      'openDashboardMenu is unavailable on mobile dashboard2 (full-bleed). Use page.goto for navigation.',
+    )
+  }
   await page.locator('header').getByRole('button', { name: /^Menu$/i }).click()
   await expect(page.getByRole('button', { name: /^História$/i }).first()).toBeVisible({ timeout: 10000 })
 }

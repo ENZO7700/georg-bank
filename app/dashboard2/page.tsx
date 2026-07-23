@@ -421,6 +421,36 @@ export default function GeorgePrototypePage() {
     }
   }, [])
 
+  // PWA / iOS home-screen / Capacitor → force full-bleed (no desktop phone frame)
+  useEffect(() => {
+    const nav = window.navigator as Navigator & { standalone?: boolean }
+    const mqStandalone = window.matchMedia('(display-mode: standalone)')
+    const mqMinimal = window.matchMedia('(display-mode: minimal-ui)')
+    const mqFullscreen = window.matchMedia('(display-mode: fullscreen)')
+
+    const sync = () => {
+      const isStandalone =
+        mqStandalone.matches ||
+        mqMinimal.matches ||
+        mqFullscreen.matches ||
+        nav.standalone === true ||
+        Boolean((window as Window & { Capacitor?: unknown }).Capacitor) ||
+        /Capacitor/i.test(nav.userAgent)
+      document.documentElement.classList.toggle('d2-standalone', isStandalone)
+    }
+
+    sync()
+    mqStandalone.addEventListener('change', sync)
+    mqMinimal.addEventListener('change', sync)
+    mqFullscreen.addEventListener('change', sync)
+    return () => {
+      mqStandalone.removeEventListener('change', sync)
+      mqMinimal.removeEventListener('change', sync)
+      mqFullscreen.removeEventListener('change', sync)
+      document.documentElement.classList.remove('d2-standalone')
+    }
+  }, [])
+
   // Načítanie stavu a transakcií zo Supabase DB a localStorage
   useEffect(() => {
     const loadFromDb = async () => {
@@ -768,6 +798,17 @@ export default function GeorgePrototypePage() {
       return () => window.removeEventListener('keydown', handleKeyDown)
     }
   }, [isPaymentSheetOpen])
+
+  // Lock page scroll while viewport-fixed overlays are open (Android Chrome)
+  useEffect(() => {
+    const overlayOpen = isPaymentSheetOpen || !!selectedTransaction || !!modalType
+    if (!overlayOpen) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [isPaymentSheetOpen, selectedTransaction, modalType])
   useEffect(() => {
     if (isSearchOpen) {
       const timer = setTimeout(() => {
@@ -988,21 +1029,23 @@ export default function GeorgePrototypePage() {
         style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}
       >
         
-        {/* Desktop chrome — skrytý na PIN, aby PIN bol plných 100vh */}
+        {/* Desktop chrome — only ≥lg; hidden on PIN / mobile / PWA standalone */}
         {!isPasscodeScreen && (
           <>
-            <DashboardHeader user={user} />
-            <div className="w-full bg-[#0a0a10] border-b border-slate-900/40 px-6 py-3.5 text-[15px] font-bold text-white tracking-tight select-none">
+            <div className="d2-desktop-chrome hidden lg:block">
+              <DashboardHeader user={user} />
+            </div>
+            <div className="d2-desktop-chrome hidden lg:block w-full bg-[#0a0a10] border-b border-slate-900/40 px-6 py-3.5 text-[15px] font-bold text-white tracking-tight select-none">
               Domov
             </div>
           </>
         )}
 
         <div
-          className={`flex items-center justify-center relative ${
+          className={`d2-phone-center flex justify-center relative ${
             isPasscodeScreen
-              ? 'min-h-dvh h-dvh p-0'
-              : 'flex-1 p-0 sm:p-6 md:p-12'
+              ? 'min-h-dvh h-dvh p-0 items-stretch'
+              : 'flex-1 p-0 items-stretch lg:items-center lg:p-6 xl:p-12'
           }`}
         >
           
@@ -1197,12 +1240,12 @@ export default function GeorgePrototypePage() {
           <div className="fixed top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-112.5 h-112.5 bg-purple-900/10 rounded-full accent-glow pointer-events-none z-0"></div>
           <div className="fixed bottom-1/4 left-1/3 w-87.5 h-87.5 bg-blue-900/10 rounded-full accent-glow pointer-events-none z-0"></div>
 
-          {/* Telefón: originálne pozadie #12131a — PIN screen always full viewport */}
+          {/* Shell: full-bleed on mobile/PWA; phone preview only ≥lg (not PIN) */}
           <div
-            className={`w-full max-w-103 bg-[#12131a] relative flex flex-col overflow-hidden z-10 ${
+            className={`d2-phone-shell w-full max-w-none bg-[#12131a] relative flex flex-col overflow-hidden z-10 ${
               isPasscodeScreen
-                ? 'min-h-dvh h-dvh'
-                : 'min-h-screen sm:min-h-223 sm:max-h-223 sm:rounded-[44px] sm:ring-12 sm:ring-neutral-800/90 sm:shadow-[0_30px_80px_-10px_rgba(0,0,0,0.95)]'
+                ? 'min-h-dvh h-dvh max-h-dvh'
+                : 'h-dvh max-h-dvh min-h-0 lg:max-w-103 lg:h-223 lg:min-h-223 lg:max-h-223 lg:rounded-[44px] lg:ring-12 lg:ring-neutral-800/90 lg:shadow-[0_30px_80px_-10px_rgba(0,0,0,0.95)]'
             }`}
           >
             
@@ -1652,18 +1695,18 @@ export default function GeorgePrototypePage() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#030305] text-slate-100 flex flex-col font-sans relative overflow-x-hidden">
+    <div className="min-h-dvh h-dvh w-full bg-[#030305] text-slate-100 flex flex-col font-sans relative overflow-hidden">
       
-      {/* Hlavné desktop menu na vrchu stránky */}
-      <DashboardHeader user={user} />
-      
-      {/* Podmenu "Domov" */}
-      <div className="w-full bg-[#0a0a10] border-b border-slate-900/40 px-6 py-3.5 text-[15px] font-bold text-white tracking-tight select-none">
+      {/* Desktop chrome — only ≥lg; hidden on mobile / PWA standalone */}
+      <div className="d2-desktop-chrome hidden lg:block shrink-0">
+        <DashboardHeader user={user} />
+      </div>
+      <div className="d2-desktop-chrome hidden lg:block shrink-0 w-full bg-[#0a0a10] border-b border-slate-900/40 px-6 py-3.5 text-[15px] font-bold text-white tracking-tight select-none">
         Domov
       </div>
 
-      {/* Centrovací kontajner pre mobilný simulátor */}
-      <div className="flex-1 flex items-center justify-center p-0 sm:p-6 md:p-12 relative">
+      {/* Centrovací kontajner: full-bleed mobile; phone preview ≥lg */}
+      <div className="d2-phone-center flex-1 min-h-0 flex items-stretch justify-center p-0 lg:items-center lg:p-6 xl:p-12 relative">
       
       <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -1726,13 +1769,13 @@ export default function GeorgePrototypePage() {
       <div className="fixed top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-112.5 h-112.5 bg-purple-900/10 rounded-full accent-glow pointer-events-none z-0"></div>
       <div className="fixed bottom-1/4 left-1/3 w-87.5 h-87.5 bg-blue-900/10 rounded-full accent-glow pointer-events-none z-0"></div>
 
-      {/* HLAVNÝ MOBILNÝ KONTAJNER: Presná farba #0a0a10 */}
-      <div className="w-full max-w-103 bg-[#0a0a10] min-h-screen sm:min-h-223 sm:max-h-223 sm:rounded-[44px] sm:ring-12 sm:ring-neutral-800/90 sm:shadow-[0_30px_80px_-10px_rgba(0,0,0,0.95)] relative flex flex-col justify-between overflow-hidden z-10">
+      {/* HLAVNÝ SHELL: full-bleed mobile; desktop phone frame ≥lg */}
+      <div className="d2-phone-shell w-full max-w-none bg-[#0a0a10] h-dvh max-h-dvh min-h-0 lg:max-w-103 lg:h-223 lg:min-h-223 lg:max-h-223 lg:rounded-[44px] lg:ring-12 lg:ring-neutral-800/90 lg:shadow-[0_30px_80px_-10px_rgba(0,0,0,0.95)] relative flex flex-col justify-between overflow-hidden z-10">
         
         {/* INNER SCROLLABLE WORKSPACE */}
         <div 
-          className="flex-1 overflow-y-auto no-scrollbar flex flex-col justify-between transition-all duration-300"
-          style={{ paddingBottom: isDemoDrawerOpen ? '250px' : '96px' }}
+          className="flex-1 min-h-0 overflow-y-auto no-scrollbar flex flex-col justify-between transition-all duration-300"
+          style={{ paddingBottom: isDemoDrawerOpen ? '250px' : 'calc(96px + env(safe-area-inset-bottom, 0px))' }}
         >
           
           {/*==================================================
@@ -1740,7 +1783,7 @@ export default function GeorgePrototypePage() {
               ==================================================*/}
           <div id="content-prehlad" className={`tab-content ${state.activeTab === 'prehlad' ? 'block' : 'hidden'}`}>
             {/* HEADER S PRESNÝM ODTIEŇOM MODREJ #327bf5 */}
-            <header className="sticky top-0 bg-[#0a0a10]/95 backdrop-blur-md z-30 px-6 pt-5 pb-4 flex items-center justify-between">
+            <header className="sticky top-0 bg-[#0a0a10]/95 backdrop-blur-md z-30 px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4 flex items-center justify-between">
               <div className="w-8"></div>
               <h1 className="text-[20px] font-bold tracking-tight text-white select-none">Prehľad</h1>
               
@@ -2027,7 +2070,7 @@ export default function GeorgePrototypePage() {
               ZÁLOŽKA 2: INVEST (PORTFÓLIO A TRHY)
               ==================================================*/}
           <div id="content-invest" className={`tab-content ${state.activeTab === 'invest' ? 'block' : 'hidden'}`}>
-            <header className="px-6 pt-5 pb-4 flex items-center justify-between">
+            <header className="px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4 flex items-center justify-between">
               <h1 className="text-xl font-bold text-white">Investície</h1>
               <button onClick={() => showModal('cards-modal')} className="bg-[#327bf5]/20 text-[#327bf5] border border-[#327bf5]/25 px-3 py-1 rounded-full text-xs font-semibold hover:bg-[#327bf5]/30 active:scale-95 transition-all">
                 + Kúpiť
@@ -2082,7 +2125,7 @@ export default function GeorgePrototypePage() {
               ZÁLOŽKA 3: OBJAVUJTE
               ==================================================*/}
           <div id="content-objavujte" className={`tab-content ${state.activeTab === 'objavujte' ? 'block' : 'hidden'}`}>
-            <header className="px-6 pt-5 pb-4">
+            <header className="px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4">
               <h1 className="text-xl font-bold text-white">Objavujte</h1>
               <p className="text-xs text-slate-400">Služby, výhody a produkty na dosah</p>
             </header>
@@ -2119,7 +2162,7 @@ export default function GeorgePrototypePage() {
               ZÁLOŽKA 4: KONTAKTY
               ==================================================*/}
           <div id="content-kontakty" className={`tab-content ${state.activeTab === 'kontakty' ? 'block' : 'hidden'}`}>
-            <header className="px-6 pt-5 pb-4">
+            <header className="px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4">
               <h1 className="text-xl font-bold text-white">Kontakty</h1>
               <p className="text-xs text-slate-400">Sme tu pre vás 24/7</p>
             </header>
@@ -2161,7 +2204,7 @@ export default function GeorgePrototypePage() {
             SPODNÁ NAVIGAČNÁ LIŠTA (AKTÍVNA KAPSULA 1:1)
             ==================================================*/}
         <nav 
-          className="absolute left-0 right-0 bg-[#0a0a10]/98 backdrop-blur-md border-t border-slate-900/40 px-4 py-3.5 flex justify-around items-center z-40 sm:rounded-b-[42px] transition-all duration-300"
+          className="d2-tab-nav absolute left-0 right-0 bg-[#0a0a10]/98 backdrop-blur-md border-t border-slate-900/40 px-4 pt-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] flex justify-around items-center z-40 lg:rounded-b-[42px] transition-all duration-300"
           style={{ bottom: isDemoDrawerOpen ? '172px' : '0px' }}
         >
           
@@ -2257,12 +2300,13 @@ export default function GeorgePrototypePage() {
 
         </nav>
 
-        {/* BOTTOM SHEET: NOVÁ PLATBA */}
+        {/* BOTTOM SHEET: NOVÁ PLATBA — fixed to viewport (avoids absolute-in-tall-shell) */}
         <div
           id="payment-sheet"
-          className={`absolute inset-0 bg-black/75 backdrop-blur-sm z-50 flex flex-col justify-end transition-all duration-300 ${
-            isPaymentSheetOpen ? 'opacity-100 pointer-events-auto translate-y-0' : 'opacity-0 pointer-events-none translate-y-full'
+          className={`fixed inset-0 z-50 flex flex-col justify-end bg-black/75 backdrop-blur-sm transition-opacity duration-300 lg:absolute ${
+            isPaymentSheetOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
+          aria-hidden={!isPaymentSheetOpen}
         >
           <div
             onClick={closePaymentSheet}
@@ -2270,7 +2314,9 @@ export default function GeorgePrototypePage() {
           />
           
           <div
-            className="bg-[#12131b] w-full rounded-t-[32px] p-6 border-t border-slate-800 z-10 shadow-2xl relative"
+            className={`bg-[#12131b] w-full max-h-[min(92dvh,100%)] overflow-y-auto no-scrollbar rounded-t-[32px] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] border-t border-slate-800 z-10 shadow-2xl relative transition-transform duration-300 ease-out ${
+              isPaymentSheetOpen ? 'translate-y-0' : 'translate-y-full'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div
@@ -2368,21 +2414,21 @@ export default function GeorgePrototypePage() {
           </div>
         </div>
 
-        {/* DETAIL TRANSAKCIE */}
+        {/* DETAIL TRANSAKCIE — fixed to viewport */}
         <div
           id="txn-detail-modal"
-          className={`absolute inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center transition-all duration-300 p-0 sm:p-5 ${
+          className={`fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-md transition-all duration-300 p-0 lg:absolute lg:items-center lg:p-5 ${
             selectedTransaction ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
           onClick={() => setSelectedTransaction(null)}
         >
           {selectedTransaction && (
             <div
-              className="bg-[#12131b] w-full sm:rounded-3xl rounded-t-3xl border border-slate-800 shadow-2xl relative max-h-[85%] overflow-y-auto no-scrollbar"
+              className="bg-[#12131b] w-full lg:rounded-3xl rounded-t-3xl border border-slate-800 shadow-2xl relative max-h-[min(85dvh,85%)] overflow-y-auto no-scrollbar pb-[max(0px,env(safe-area-inset-bottom))]"
               onClick={(e) => e.stopPropagation()}
               data-testid="txn-detail-modal"
             >
-              <div className="sticky top-0 bg-[#12131b]/95 backdrop-blur-md flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-800/40">
+              <div className="sticky top-0 bg-[#12131b]/95 backdrop-blur-md flex items-center justify-between px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-3 border-b border-slate-800/40">
                 <h3 className="text-base font-bold text-white">Detail prevodu</h3>
                 <button
                   type="button"
@@ -2450,9 +2496,9 @@ export default function GeorgePrototypePage() {
           )}
         </div>
 
-        {/* POP-UP MODAL PRE DETAILY */}
-        <div id="general-modal" className={`absolute inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center transition-all duration-300 p-5 ${modalType ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
-          <div className="bg-[#12131b] w-full rounded-3xl border border-slate-800 p-5 shadow-2xl relative">
+        {/* POP-UP MODAL PRE DETAILY — fixed to viewport */}
+        <div id="general-modal" className={`fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md transition-all duration-300 p-5 lg:absolute ${modalType ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+          <div className="bg-[#12131b] w-full max-h-[min(90dvh,100%)] overflow-y-auto no-scrollbar rounded-3xl border border-slate-800 p-5 shadow-2xl relative">
             <button
               type="button"
               onClick={hideModal}
@@ -2512,7 +2558,7 @@ export default function GeorgePrototypePage() {
             setIsSearchOpen(false)
             setSearchQuery('')
           }}
-          className={`absolute inset-0 bg-black/75 backdrop-blur-xs z-40 transition-all duration-300 ${
+          className={`fixed inset-0 z-40 bg-black/75 backdrop-blur-xs transition-all duration-300 lg:absolute ${
             isSearchOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
         />
@@ -2520,7 +2566,7 @@ export default function GeorgePrototypePage() {
         {/* HĽADANIE MODAL DRAWER */}
         <div
           id="search-drawer"
-          className={`absolute inset-x-0 top-0 bg-[#0a0a10] border-b border-slate-800/80 z-50 p-5 shadow-2xl transition-all duration-300 flex flex-col justify-between ${
+          className={`fixed inset-x-0 top-0 z-50 bg-[#0a0a10] border-b border-slate-800/80 p-5 pt-[max(1.25rem,env(safe-area-inset-top))] shadow-2xl transition-all duration-300 flex flex-col justify-between lg:absolute ${
             isSearchOpen ? 'translate-y-0 opacity-100 pointer-events-auto' : '-translate-y-full opacity-0 pointer-events-none'
           }`}
         >
@@ -2594,7 +2640,7 @@ export default function GeorgePrototypePage() {
         </div>
 
         {/* TOAST NOTIFIKÁCIA */}
-        <div id="toast" className={`absolute top-10 left-1/2 -translate-x-1/2 bg-blue-600 border border-blue-400 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-xl transition-all duration-300 text-center w-[85%] z-100 ${isToastVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+        <div id="toast" className={`fixed top-[max(2.5rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 bg-blue-600 border border-blue-400 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-xl transition-all duration-300 text-center w-[85%] max-w-103 z-100 lg:absolute lg:top-10 ${isToastVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
           {toastMessage}
         </div>
 

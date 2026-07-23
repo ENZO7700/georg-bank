@@ -1,17 +1,31 @@
-// George PWA Service Worker v2
-const CACHE_VERSION = 'george-pwa-v2'
+// George PWA Service Worker v3
+const CACHE_VERSION = 'george-pwa-v3'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
 
-// Static assets to pre-cache (shell of the app)
+// Static assets to pre-cache (shell of the app).
+// Only include URLs that exist under public/ — a single miss used to
+// fail cache.addAll and prevent the SW from ever activating.
 const PRECACHE_URLS = [
   '/offline.html',
   '/android-chrome-192x192.png',
   '/android-chrome-512x512.png',
   '/apple-touch-icon.png',
-  '/george-logo.svg',
+  '/icon.svg',
   '/favicon.ico',
 ]
+
+/** Precache each URL individually so one miss does not abort install. */
+async function precacheAssets(cache) {
+  const results = await Promise.allSettled(
+    PRECACHE_URLS.map((url) => cache.add(url))
+  )
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.warn('[SW] Precache miss (non-fatal):', PRECACHE_URLS[index], result.reason)
+    }
+  })
+}
 
 // Install: pre-cache static shell
 self.addEventListener('install', (event) => {
@@ -19,7 +33,7 @@ self.addEventListener('install', (event) => {
     caches.open(STATIC_CACHE)
       .then((cache) => {
         console.log('[SW] Pre-caching static assets')
-        return cache.addAll(PRECACHE_URLS)
+        return precacheAssets(cache)
       })
       .then(() => self.skipWaiting())
   )

@@ -24,6 +24,7 @@ test.describe('Dashboard', () => {
   test('DashboardHeader má logo a Odhlásenie na mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await gotoApp(page, '/dashboard')
+    // Full-bleed mobile dashboard2: no outer Menu chrome — assert Prehľad / PIN
     await expectGeorgeHeader(page)
   })
 
@@ -35,6 +36,8 @@ test.describe('Dashboard', () => {
   })
 
   test('Menu História naviguje na dashboard', async ({ page }) => {
+    // Menu chrome is desktop-only on dashboard2; use payment-orders which still has Menu
+    await page.setViewportSize({ width: 1280, height: 800 })
     await gotoApp(page, '/dashboard/payment-orders')
     await openDashboardMenu(page)
     await page.getByRole('button', { name: /^História$/i }).first().click()
@@ -42,7 +45,8 @@ test.describe('Dashboard', () => {
   })
 
   test('Menu sub-header zobrazuje SPACE účet a reálny zostatok', async ({ page }) => {
-    await gotoApp(page, '/dashboard')
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await gotoApp(page, '/dashboard/payment-orders')
     await openDashboardMenu(page)
     const subHeader = page.locator('text=/SPACE účet \\| €/')
     await expect(subHeader.first()).toBeVisible()
