@@ -138,12 +138,12 @@ export function PohybyClient() {
         >
           <div className="flex items-end justify-between gap-3">
             <div>
-              <p className="text-sm text-slate-300">Limit platieb (24 h)</p>
+              <p className="text-sm text-slate-300">Limit platieb (24 h) — nie zostatok účtu</p>
               <p className="mt-1 text-3xl font-semibold tabular-nums">
                 {formatEur(dailyLimit.remainingEur)}
               </p>
               <p className="mt-1 text-sm text-slate-400">
-                zostáva z {formatEur(dailyLimit.limitEur)}
+                zostáva z limitu {formatEur(dailyLimit.limitEur)}
               </p>
             </div>
             <div className="text-right text-sm text-slate-300">
