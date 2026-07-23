@@ -805,44 +805,10 @@ export default function GeorgePrototypePage() {
     setIsDemoDrawerOpen(prev => !prev)
   }
 
-  const simulateIncomingCredit = (amount: number) => {
-    setState(prev => {
-      const balanceBefore = prev.spaceBalance
-      const balanceAfter = prev.spaceBalance + amount
-      const txn: Transaction = {
-        id: newTxnId('in'),
-        recipient: 'Simulovaný vklad / Bonus',
-        amount,
-        date: 'Dnes',
-        createdAt: new Date().toISOString(),
-        type: 'deposit',
-        status: 'Spracované',
-        balanceBefore,
-        balanceAfter,
-        category: 'Dobitie',
-        note: 'Simulovaný vklad',
-      }
-      return {
-        ...prev,
-        spaceBalance: balanceAfter,
-        transactions: [txn, ...prev.transactions],
-      }
-    })
-
-    // Uloženie do Supabase DB
-    fetch('/api/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipient: 'Simulovaný vklad / Bonus',
-        amount,
-        type: 'deposit',
-        category: 'Dobitie',
-        note: 'Simulovaný vklad',
-      }),
-    }).catch((err) => console.error('Chyba ukladania vkladu do Supabase DB:', err))
-
-    showToast(`Úspešne pripísaná platba: +${amount.toFixed(2)} €.`)
+  const simulateIncomingCredit = (_amount: number) => {
+    showToast(
+      'Dobíjanie € je zakázané. Automatické obnovenie zostatku je možné až po 24 hodinách.'
+    )
   }
 
   const simulateCashbackBonus = (amount: number) => {
@@ -2639,12 +2605,27 @@ export default function GeorgePrototypePage() {
             <button onClick={toggleDemoDrawer} className="text-xs text-slate-400 hover:text-white">Zavrieť</button>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => simulateIncomingCredit(50.00)} className="bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/30 font-semibold py-2 rounded-xl text-[11px] hover:bg-[#10b981]/30 active:scale-95 transition-all">
-              + Prijať 50,00 €
+            <button
+              type="button"
+              disabled
+              onClick={() => simulateIncomingCredit(50.00)}
+              className="bg-slate-700/40 text-slate-500 border border-slate-600/40 font-semibold py-2 rounded-xl text-[11px] cursor-not-allowed opacity-60"
+              title="Dobíjanie zakázané — auto obnovenie max 1× / 24 h"
+            >
+              + Prijať 50,00 € (zakázané)
             </button>
-            <button onClick={() => simulateIncomingCredit(1000.00)} className="bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/30 font-semibold py-2 rounded-xl text-[11px] hover:bg-[#10b981]/30 active:scale-95 transition-all">
-              + Prijať 1 000,00 €
+            <button
+              type="button"
+              disabled
+              onClick={() => simulateIncomingCredit(1000.00)}
+              className="bg-slate-700/40 text-slate-500 border border-slate-600/40 font-semibold py-2 rounded-xl text-[11px] cursor-not-allowed opacity-60"
+              title="Dobíjanie zakázané — auto obnovenie max 1× / 24 h"
+            >
+              + Prijať 1 000,00 € (zakázané)
             </button>
+            <p className="col-span-2 text-[10px] text-amber-200/90 leading-snug rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2">
+              Pravidlo: manuálne dobíjanie € je vypnuté. Automatické obnovenie zostatku na 6 660 € je možné najviac 1× za 24 hodín.
+            </p>
             <button onClick={() => simulateCashbackBonus(5.50)} className="bg-purple-600/20 text-purple-300 border border-purple-500/30 font-semibold py-2 rounded-xl text-[11px] hover:bg-purple-600/30 active:scale-95 transition-all">
               Zarobiť Cashback 5,50 €
             </button>

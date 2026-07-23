@@ -11,6 +11,13 @@ type DailyLimit = {
   remainingEur: number
 }
 
+type TopupPolicy = {
+  manualTopupDisabled?: boolean
+  autoRefillEveryHours?: number
+  autoRefillAllowedInMs?: number
+  message?: string
+}
+
 type Movement = {
   id: string
   recipient: string
@@ -53,6 +60,7 @@ export function PohybyClient() {
     usedEur: 0,
     remainingEur: DAILY_PAYMENT_LIMIT_EUR,
   })
+  const [topupPolicy, setTopupPolicy] = useState<TopupPolicy | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
@@ -68,6 +76,7 @@ export function PohybyClient() {
       }
       setMovements(data.transactions ?? [])
       if (data.dailyLimit) setDailyLimit(data.dailyLimit)
+      if (data.topupPolicy) setTopupPolicy(data.topupPolicy)
       setUpdatedAt(new Date())
       setError('')
     } catch (err) {
@@ -155,6 +164,16 @@ export function PohybyClient() {
               Aktualizované {updatedAt.toLocaleTimeString('sk-SK')}
             </p>
           )}
+          <div
+            className="mt-4 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-100/95"
+            data-testid="pohyby-topup-policy"
+          >
+            <p className="font-semibold text-amber-200">Pravidlo dobíjania</p>
+            <p className="mt-1 leading-relaxed">
+              {topupPolicy?.message ||
+                'Manuálne dobíjanie € je zakázané. Automatické obnovenie zostatku je možné až po 24 hodinách (max 1×).'}
+            </p>
+          </div>
         </section>
 
         <section className="rounded-2xl border border-white/10 bg-[#101a2c]">

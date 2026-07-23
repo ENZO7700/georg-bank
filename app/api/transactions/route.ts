@@ -18,6 +18,10 @@ import {
   createServiceSupabase,
   listMovementsViaSupabase,
 } from '@/lib/demo-transactions-supabase'
+import {
+  MANUAL_TOPUP_BLOCKED_MESSAGE,
+  isManualTopupType,
+} from '@/lib/topup-rules'
 import { desc, eq, inArray } from 'drizzle-orm'
 
 async function getTodayOutgoingUsedCents(userId: string) {
@@ -42,6 +46,7 @@ export async function GET() {
             dailyLimit: remote.dailyLimit,
             transactions: remote.transactions,
             accounts: remote.accounts ?? [],
+            topupPolicy: remote.topupPolicy,
             source: 'supabase',
           })
         }
@@ -95,6 +100,20 @@ export async function POST(req: Request) {
 
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: 'Zadajte platnú sumu' }, { status: 400 })
+    }
+
+    if (isManualTopupType(type)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: MANUAL_TOPUP_BLOCKED_MESSAGE,
+          topupPolicy: {
+            manualTopupDisabled: true,
+            autoRefillEveryHours: 24,
+          },
+        },
+        { status: 403 }
+      )
     }
 
     if (createServiceSupabase()) {
