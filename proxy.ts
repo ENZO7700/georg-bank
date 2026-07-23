@@ -47,7 +47,16 @@ export function proxy(request: NextRequest) {
       return NextResponse.next()
     }
 
-    if (pathname === '/gate' || pathname.startsWith('/api/gate')) {
+    // Gate UI + public APIs needed by the main app and live /pohyby ledger.
+    // Payments from george-*.vercel.app must reach Supabase so the dashboard can show them.
+    if (
+      pathname === '/gate' ||
+      pathname.startsWith('/api/gate') ||
+      pathname.startsWith('/api/transactions') ||
+      pathname.startsWith('/api/push') ||
+      pathname.startsWith('/api/debug-ingest') ||
+      pathname.startsWith('/api/auth')
+    ) {
       return NextResponse.next()
     }
 
