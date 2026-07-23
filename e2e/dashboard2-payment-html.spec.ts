@@ -31,7 +31,7 @@ test.describe('dashboard2 – vyplnenie platby + HTML potvrdenie', () => {
       }
     })
 
-    // 1) Login (PIN 2366)
+    // 1) Login (PIN 666666)
     await loginWithPin(page)
 
     // 2) Otvor Nová platba
@@ -74,6 +74,7 @@ test.describe('dashboard2 – vyplnenie platby + HTML potvrdenie', () => {
     const html = fs.readFileSync(tempPath, 'utf8')
     expect(html).toMatch(/<!DOCTYPE html>/i)
     expect(html).toMatch(/<html/i)
+    expect(html).toMatch(/Peter Novotn[yý]/i)
     expect(html).toMatch(/Mária Nováková|Maria Novakova/i)
     // suma 0.25 → v HTML typicky 0,25 alebo 0.25
     expect(html).toMatch(/0[,.]25/)

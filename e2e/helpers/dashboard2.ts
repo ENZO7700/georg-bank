@@ -26,7 +26,7 @@ export async function enterPin(page: Page, pin: string) {
 }
 
 /** PIN login into Prehľad (no welcome CTA click — PIN is the entry screen). */
-export async function loginWithPin(page: Page, pin = '2366') {
+export async function loginWithPin(page: Page, pin = '666666') {
   await openPinScreen(page)
   await enterPin(page, pin)
   await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible({

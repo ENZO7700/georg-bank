@@ -3,6 +3,7 @@ import {
   GUEST_USER_EMAIL,
   GUEST_USER_NAME,
   GUEST_USER_PASSWORD,
+  syncGuestCredentialPassword,
 } from '@/lib/guest-auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -33,39 +34,48 @@ function serverAuthHeaders(request: NextRequest) {
 
 async function ensureGuestSignedIn(request: NextRequest) {
   const headers = serverAuthHeaders(request)
+  const credentials = {
+    email: GUEST_USER_EMAIL,
+    password: GUEST_USER_PASSWORD,
+  }
 
   let response = await auth.api.signInEmail({
+    body: credentials,
+    headers,
+    asResponse: true,
+  })
+
+  if (response.ok) return response
+
+  const { ensureDatabase } = await import('@/scripts/ensure-db')
+  await ensureDatabase().catch(() => undefined)
+
+  const signUpResponse = await auth.api.signUpEmail({
     body: {
-      email: GUEST_USER_EMAIL,
-      password: GUEST_USER_PASSWORD,
+      ...credentials,
+      name: GUEST_USER_NAME,
     },
     headers,
     asResponse: true,
   })
 
-  if (!response.ok) {
-    const { ensureDatabase } = await import('@/scripts/ensure-db')
-    await ensureDatabase().catch(() => undefined)
-
-    await auth.api.signUpEmail({
-      body: {
-        email: GUEST_USER_EMAIL,
-        password: GUEST_USER_PASSWORD,
-        name: GUEST_USER_NAME,
-      },
-      headers,
-      asResponse: true,
+  // Existing guest with a different password → sign-up 422, sign-in keeps failing.
+  // Sync the credential hash to the configured guest password, then retry.
+  if (!signUpResponse.ok) {
+    const synced = await syncGuestCredentialPassword().catch((error) => {
+      console.error('[guest-auth] password sync failed:', error)
+      return false
     })
-
-    response = await auth.api.signInEmail({
-      body: {
-        email: GUEST_USER_EMAIL,
-        password: GUEST_USER_PASSWORD,
-      },
-      headers,
-      asResponse: true,
-    })
+    if (synced) {
+      console.warn('[guest-auth] synced guest credential password')
+    }
   }
+
+  response = await auth.api.signInEmail({
+    body: credentials,
+    headers,
+    asResponse: true,
+  })
 
   return response
 }

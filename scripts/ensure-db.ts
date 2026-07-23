@@ -3,6 +3,12 @@ import path from 'path'
 import { Pool } from 'pg'
 import { resolveDatabaseUrl } from '../lib/db/resolve-database-url'
 import {
+  DEMO_DEFAULT_USER_EMAIL,
+  DEMO_DEFAULT_USER_ID,
+  DEMO_DEFAULT_USER_LEGACY_IDS,
+  DEMO_DEFAULT_USER_NAME,
+} from '../lib/demo-user'
+import {
   GUEST_USER_EMAIL,
   GUEST_USER_NAME,
   GUEST_USER_PASSWORD,
@@ -77,7 +83,17 @@ async function ensureGuestUser(pool: Pool) {
   )
 
   if (existing.rows.length > 0) {
-    console.log('[ensure-db] Guest user already exists.')
+    await pool.query(
+      `UPDATE "user" SET name = $1, "updatedAt" = NOW() WHERE email = $2 AND name IS DISTINCT FROM $1`,
+      [GUEST_USER_NAME, GUEST_USER_EMAIL]
+    )
+    const { syncGuestCredentialPassword } = await import('../lib/guest-auth')
+    const synced = await syncGuestCredentialPassword().catch(() => false)
+    console.log(
+      synced
+        ? '[ensure-db] Guest user exists; credential password synced.'
+        : '[ensure-db] Guest user already exists.'
+    )
     return
   }
 
@@ -92,7 +108,77 @@ async function ensureGuestUser(pool: Pool) {
   console.log('[ensure-db] Guest user created.')
 }
 
-/** Demo account used by dashboard2 payments (user-filip-default). Keep funded for CI. */
+const DEMO_USER_ID_REF_TABLES = [
+  'bank_account',
+  'transaction',
+  'session',
+  'account',
+  'push_subscription',
+  'assistant_conversation',
+  'assistant_message',
+  'assistant_run_log',
+] as const
+
+/** Move legacy demo user rows (e.g. user-filip-default) onto user-peter-default. */
+async function migrateLegacyDemoUserIds(pool: Pool) {
+  if (!(await tableExists(pool, 'user'))) return
+
+  for (const legacyId of DEMO_DEFAULT_USER_LEGACY_IDS) {
+    const legacy = await pool.query(
+      `SELECT id, name, email, "emailVerified", image, "createdAt" FROM "user" WHERE id = $1 LIMIT 1`,
+      [legacyId]
+    )
+    if (legacy.rows.length === 0) continue
+
+    const target = await pool.query(
+      `SELECT 1 FROM "user" WHERE id = $1 LIMIT 1`,
+      [DEMO_DEFAULT_USER_ID]
+    )
+
+    await pool.query('BEGIN')
+    try {
+      if (target.rows.length === 0) {
+        const row = legacy.rows[0]
+        // Free unique email before inserting the renamed row.
+        await pool.query(
+          `UPDATE "user" SET email = $1, "updatedAt" = NOW() WHERE id = $2`,
+          [`migrated-${legacyId}@local.test`, legacyId]
+        )
+        await pool.query(
+          `INSERT INTO "user" (id, name, email, "emailVerified", image, "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          [
+            DEMO_DEFAULT_USER_ID,
+            row.name || DEMO_DEFAULT_USER_NAME,
+            DEMO_DEFAULT_USER_EMAIL,
+            row.emailVerified ?? true,
+            row.image ?? null,
+            row.createdAt ?? new Date(),
+          ]
+        )
+      }
+
+      for (const table of DEMO_USER_ID_REF_TABLES) {
+        if (!(await tableExists(pool, table))) continue
+        await pool.query(
+          `UPDATE "${table}" SET "userId" = $1 WHERE "userId" = $2`,
+          [DEMO_DEFAULT_USER_ID, legacyId]
+        )
+      }
+
+      await pool.query(`DELETE FROM "user" WHERE id = $1`, [legacyId])
+      await pool.query('COMMIT')
+      console.log(
+        `[ensure-db] Migrated demo user ${legacyId} → ${DEMO_DEFAULT_USER_ID}.`
+      )
+    } catch (error) {
+      await pool.query('ROLLBACK')
+      throw error
+    }
+  }
+}
+
+/** Demo account used by dashboard2 payments (user-peter-default). Keep funded for CI. */
 async function ensureDemoAccountBalance(pool: Pool) {
   if (!(await tableExists(pool, 'bank_account'))) {
     console.log('[ensure-db] bank_account table missing, skip demo balance seed.')
@@ -100,13 +186,13 @@ async function ensureDemoAccountBalance(pool: Pool) {
   }
 
   const SEED_CENTS = 10_000 // €100
-  const defaultUserId = 'user-filip-default'
+  const defaultUserId = DEMO_DEFAULT_USER_ID
 
   await pool.query(
     `INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
-     VALUES ($1, 'Filip', 'filip@example.com', true, NOW(), NOW())
-     ON CONFLICT (id) DO NOTHING`,
-    [defaultUserId]
+     VALUES ($1, $2, $3, true, NOW(), NOW())
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, "updatedAt" = NOW()`,
+    [defaultUserId, DEMO_DEFAULT_USER_NAME, DEMO_DEFAULT_USER_EMAIL]
   )
 
   const existing = await pool.query(
@@ -147,6 +233,7 @@ export async function ensureDatabase() {
     await pool.query('SELECT 1')
     await ensureSchema(pool)
     await ensureGuestUser(pool)
+    await migrateLegacyDemoUserIds(pool)
     await ensureDemoAccountBalance(pool)
   } finally {
     await pool.end()

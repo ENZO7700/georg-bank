@@ -128,7 +128,7 @@ test.describe('dashboard2 – história platieb po autorizácii', () => {
     await page.reload({ waitUntil: 'domcontentloaded' })
     // po reload treba znova PIN (isSimulatorLoggedIn nie je persistovaný)
     await expect(page.getByText(/Zadajte bezpečnostný PIN/i)).toBeVisible({ timeout: 15000 })
-    await enterPin(page, '2366')
+    await enterPin(page, '666666')
 
     await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible({ timeout: 15000 })
     // Prefer DB or localStorage — row title may be "Persist xxx" or "Persist xxx IBAN: …"

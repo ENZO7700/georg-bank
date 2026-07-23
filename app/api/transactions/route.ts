@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { transaction, bankAccount, user } from '@/lib/db/schema'
-import { desc, eq } from 'drizzle-orm'
+import {
+  DEMO_DEFAULT_USER_EMAIL,
+  DEMO_DEFAULT_USER_ID,
+  DEMO_DEFAULT_USER_LEGACY_IDS,
+  DEMO_DEFAULT_USER_NAME,
+} from '@/lib/demo-user'
+import { desc, eq, inArray } from 'drizzle-orm'
 
 export async function GET() {
   try {
@@ -47,24 +53,84 @@ export async function POST(req: Request) {
     const newTxnId = `txn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
     // Ensure seed default user exists in database
-    const defaultUserId = 'user-filip-default'
+    const defaultUserId = DEMO_DEFAULT_USER_ID
     const existingUser = await db.query.user.findFirst({
       where: (t, { eq }) => eq(t.id, defaultUserId),
     })
 
     if (!existingUser) {
-      await db.insert(user).values({
-        id: defaultUserId,
-        name: 'Filip',
-        email: 'filip@example.com',
-        emailVerified: true,
-      }).onConflictDoNothing()
+      // Migrate leftover local rows that still use a legacy demo user id.
+      const legacyUsers = await db.query.user.findMany({
+        where: (t, { inArray: inArr }) =>
+          inArr(t.id, [...DEMO_DEFAULT_USER_LEGACY_IDS]),
+      })
+      if (legacyUsers.length > 0) {
+        for (const legacyId of DEMO_DEFAULT_USER_LEGACY_IDS) {
+          await db
+            .update(user)
+            .set({
+              email: `migrated-${legacyId}@local.test`,
+              updatedAt: new Date(),
+            })
+            .where(eq(user.id, legacyId))
+        }
+        await db.insert(user).values({
+          id: defaultUserId,
+          name: DEMO_DEFAULT_USER_NAME,
+          email: DEMO_DEFAULT_USER_EMAIL,
+          emailVerified: true,
+        }).onConflictDoNothing()
+        await db
+          .update(bankAccount)
+          .set({ userId: defaultUserId, updatedAt: new Date() })
+          .where(inArray(bankAccount.userId, [...DEMO_DEFAULT_USER_LEGACY_IDS]))
+        await db
+          .update(transaction)
+          .set({ userId: defaultUserId, updatedAt: new Date() })
+          .where(inArray(transaction.userId, [...DEMO_DEFAULT_USER_LEGACY_IDS]))
+        for (const legacyId of DEMO_DEFAULT_USER_LEGACY_IDS) {
+          await db.delete(user).where(eq(user.id, legacyId))
+        }
+      } else {
+        await db.insert(user).values({
+          id: defaultUserId,
+          name: DEMO_DEFAULT_USER_NAME,
+          email: DEMO_DEFAULT_USER_EMAIL,
+          emailVerified: true,
+        }).onConflictDoNothing()
+      }
+    } else if (
+      existingUser.name !== DEMO_DEFAULT_USER_NAME ||
+      existingUser.email !== DEMO_DEFAULT_USER_EMAIL
+    ) {
+      await db
+        .update(user)
+        .set({
+          name: DEMO_DEFAULT_USER_NAME,
+          email: DEMO_DEFAULT_USER_EMAIL,
+          updatedAt: new Date(),
+        })
+        .where(eq(user.id, defaultUserId))
     }
 
     // Find or create default bank account
     let accountRecord = await db.query.bankAccount.findFirst({
       where: (t, { eq }) => eq(t.userId, defaultUserId),
     })
+
+    if (!accountRecord) {
+      const legacyAccount = await db.query.bankAccount.findFirst({
+        where: (t, { inArray: inArr }) =>
+          inArr(t.userId, [...DEMO_DEFAULT_USER_LEGACY_IDS]),
+      })
+      if (legacyAccount) {
+        await db
+          .update(bankAccount)
+          .set({ userId: defaultUserId, updatedAt: new Date() })
+          .where(eq(bankAccount.id, legacyAccount.id))
+        accountRecord = { ...legacyAccount, userId: defaultUserId }
+      }
+    }
 
     // €100 seed so CI / multi-test runs do not exhaust the shared demo account
     const SEED_BALANCE_CENTS = 10_000

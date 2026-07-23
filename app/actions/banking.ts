@@ -411,7 +411,7 @@ export async function internalTransferByEmail(
 }
 
 export async function deleteTransaction(transactionId: string, pin: string) {
-  if (pin !== '2366') {
+  if (pin !== '666666') {
     throw new Error('Nesprávny PIN kód.')
   }
 
@@ -456,7 +456,7 @@ export async function deleteTransaction(transactionId: string, pin: string) {
 }
 
 export async function deleteAllTransactions(pin: string) {
-  if (pin !== '2366') {
+  if (pin !== '666666') {
     throw new Error('Nesprávny PIN kód.')
   }
 

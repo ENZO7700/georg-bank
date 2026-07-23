@@ -35,7 +35,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
 
       // Attempt sign-in / sign-up
       let result = isSignUp
-        ? await authClient.signUp.email({ email: authEmail, password: authPassword, name: name || 'Filip' })
+        ? await authClient.signUp.email({ email: authEmail, password: authPassword, name: name || 'Peter' })
         : await authClient.signIn.email({ email: authEmail, password: authPassword })
 
       // Auto-signup the dev user if sign-in fails on a fresh local database
@@ -43,7 +43,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
         const signUpResult = await authClient.signUp.email({
           email: authEmail,
           password: authPassword,
-          name: 'Filip',
+          name: 'Peter',
         })
         if (!signUpResult.error) {
           result = await authClient.signIn.email({ email: authEmail, password: authPassword })

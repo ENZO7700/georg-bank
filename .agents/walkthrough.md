@@ -14,8 +14,9 @@ In addition, we implemented a custom Welcome/Onboarding flow, PIN code authentic
   - Custom glow effects (`.glow-purple`, `.glow-blue`)
   - Modern scrollbar hides and card styles (`.george-card`)
 
-### 2. User Renaming (Tomáš Hudák → Filip Jankovič)
-- Renamed the default simulated user from **Tomáš Hudák** to **Filip Jankovič** (and case variations of Tomáš/TOMÁŠ to Filip/FILIP) across the entire project for consistency:
+### 2. User Renaming (Tomáš Hudák → Filip Jankovič → Peter Novotný)
+- Renamed the default simulated user to **Peter Novotný** (and case variations of first name to Peter/PETER) across the entire project for consistency.
+- Demo DB user id renamed `user-filip-default` → `user-peter-default` (with local migrate/upsert in `scripts/ensure-db.ts` and `/api/transactions`):
   - [page.tsx](file:///Users/erikbabcan/Downloads/george-dev/app/dashboard2/page.tsx)
   - [guest-auth.ts](file:///Users/erikbabcan/Downloads/george-dev/lib/guest-auth.ts)
   - [payment-confirmation-pdf.ts](file:///Users/erikbabcan/Downloads/george-dev/lib/payment-confirmation-pdf.ts)

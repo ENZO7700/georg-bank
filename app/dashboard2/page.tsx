@@ -93,7 +93,7 @@ function newTxnId(prefix = 'txn') {
 
 export default function GeorgePrototypePage() {
   const { data: sessionData } = useSession()
-  const user = sessionData?.user ?? { name: 'Filip', email: 'filip@example.com' }
+  const user = sessionData?.user ?? { name: 'Peter', email: 'peter@example.com' }
 
   // GLOBÁLNY STAV
   const [state, setState] = useState({
@@ -352,7 +352,7 @@ export default function GeorgePrototypePage() {
     }
 
     if (!navigator.mediaDevices?.getUserMedia) {
-      showToast('Prehliadač nepodporuje webkameru. Použite PIN kód 2366.')
+      showToast('Prehliadač nepodporuje webkameru. Použite PIN kód 666666.')
       cancelBiometrics()
       return
     }
@@ -399,7 +399,7 @@ export default function GeorgePrototypePage() {
       startFaceDetection()
     } catch (err) {
       console.error('Camera access error:', err)
-      showToast('Webkamera je nedostupná alebo prístup bol zamietnutý. Použite PIN kód 2366.')
+      showToast('Webkamera je nedostupná alebo prístup bol zamietnutý. Použite PIN kód 666666.')
       cancelBiometrics()
     }
   }
@@ -676,13 +676,13 @@ export default function GeorgePrototypePage() {
   }
 
   const handleKeypadPress = (digit: string) => {
-    if (passcode.length >= 4) return
+    if (passcode.length >= 6) return
     const newPasscode = passcode + digit
     setPasscode(newPasscode)
     setLoginError(null)
 
-    if (newPasscode.length === 4) {
-      if (newPasscode === '2366') {
+    if (newPasscode.length === 6) {
+      if (newPasscode === '666666') {
         setIsSimulatorLoggedIn(true)
         setPasscode('')
         // Bez oznamovacej správy – rovno prechod do dashboardu
@@ -1461,7 +1461,7 @@ export default function GeorgePrototypePage() {
                         {usePasswordInput ? 'Zadajte heslo' : 'Zadajte bezpečnostný PIN'}
                       </h3>
                       <p className="text-[10px] text-[#7f8596] mt-1 text-center max-w-55">
-                        {usePasswordInput ? 'Zadajte vaše prístupové heslo k bráne' : 'Zadajte 4-miestny PIN kód pre vstup do Georgea (2366)'}
+                        {usePasswordInput ? 'Zadajte vaše prístupové heslo k bráne' : 'Zadajte 6-miestny PIN kód pre vstup do Georgea (666666)'}
                       </p>
 
                       {loginError && (
@@ -1471,8 +1471,8 @@ export default function GeorgePrototypePage() {
                       )}
 
                       {!usePasswordInput ? (
-                        <div className="flex justify-center space-x-4 my-8">
-                          {[0, 1, 2, 3].map((idx) => {
+                        <div className="flex justify-center space-x-3 my-8">
+                          {[0, 1, 2, 3, 4, 5].map((idx) => {
                             const isFilled = passcode.length > idx
                             return (
                               <div
@@ -2459,7 +2459,7 @@ export default function GeorgePrototypePage() {
                   <div className="w-16 h-16 rounded-full border-2 border-indigo-500/20 overflow-hidden mx-auto mb-3">
                     <img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=120&auto=format&fit=crop&q=80" alt="Avatar" className="w-full h-full object-cover" />
                   </div>
-                  <h4 className="text-base font-bold text-white">Filip Jankovič</h4>
+                  <h4 className="text-base font-bold text-white">Peter Novotný</h4>
                   <p className="text-xs text-[#7f8596] mt-1">SPACE účet</p>
                   <div className="mt-4 pt-4 border-t border-slate-800 space-y-2.5 text-left text-xs">
                     <div className="flex justify-between"><span className="text-[#7f8596]">George Kľúč:</span> <span className="text-emerald-400 font-bold">Aktívny</span></div>
