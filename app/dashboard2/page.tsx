@@ -56,7 +56,7 @@ const SEED_TRANSACTIONS: Transaction[] = [
   {
     id: 'seed-payroll',
     recipient: 'Výplata sporiteľňa',
-    amount: 1200.0,
+    amount: 6660.0,
     date: '10.07.2026',
     createdAt: '2026-07-10T08:00:00.000Z',
     type: 'incoming',
