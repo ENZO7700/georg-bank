@@ -7,19 +7,56 @@ import {
   DEMO_DEFAULT_USER_LEGACY_IDS,
   DEMO_DEFAULT_USER_NAME,
 } from '@/lib/demo-user'
+import {
+  dailyLimitSnapshot,
+  isOutgoingPaymentType,
+  startOfLocalDay,
+} from '@/lib/daily-payment-limit'
+import {
+  createMovementViaSupabase,
+  createServiceSupabase,
+  listMovementsViaSupabase,
+} from '@/lib/demo-transactions-supabase'
 import { desc, eq, inArray } from 'drizzle-orm'
+
+async function getTodayOutgoingUsedCents(userId: string) {
+  const todayStart = startOfLocalDay()
+  const todayTxns = await db.query.transaction.findMany({
+    where: (fields, { and: andFn, eq: eqFn, gte: gteFn }) =>
+      andFn(eqFn(fields.userId, userId), gteFn(fields.createdAt, todayStart)),
+  })
+  return todayTxns
+    .filter((t) => isOutgoingPaymentType(t.type))
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+}
 
 export async function GET() {
   try {
+    if (createServiceSupabase()) {
+      const remote = await listMovementsViaSupabase(100)
+      if (remote) {
+        return NextResponse.json({
+          success: true,
+          dailyLimit: remote.dailyLimit,
+          transactions: remote.transactions,
+          accounts: [],
+          source: 'supabase',
+        })
+      }
+    }
+
     const records = await db.query.transaction.findMany({
       orderBy: [desc(transaction.createdAt)],
       limit: 100,
     })
 
     const accounts = await db.query.bankAccount.findMany()
+    const usedCents = await getTodayOutgoingUsedCents(DEMO_DEFAULT_USER_ID)
+    const dailyLimit = dailyLimitSnapshot(usedCents)
 
     return NextResponse.json({
       success: true,
+      dailyLimit,
       transactions: records.map((t) => ({
         id: t.id,
         recipient: t.description || 'Platba',
@@ -33,6 +70,7 @@ export async function GET() {
         balanceAfter: t.balanceAfter ? t.balanceAfter / 100 : undefined,
       })),
       accounts,
+      source: 'drizzle',
     })
   } catch (error) {
     console.error('[API /api/transactions GET] Error:', error)
@@ -49,8 +87,39 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Zadajte platnú sumu' }, { status: 400 })
     }
 
+    if (createServiceSupabase()) {
+      const remote = await createMovementViaSupabase({
+        recipient,
+        iban,
+        vs,
+        amount,
+        note,
+        type,
+        category,
+      })
+      if (remote && 'error' in remote && remote.error) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: remote.error,
+            dailyLimit: 'dailyLimit' in remote ? remote.dailyLimit : undefined,
+          },
+          { status: remote.status || 400 }
+        )
+      }
+      if (remote && 'transaction' in remote) {
+        return NextResponse.json({
+          success: true,
+          dailyLimit: remote.dailyLimit,
+          transaction: remote.transaction,
+          source: 'supabase',
+        })
+      }
+    }
+
     const amountInCents = Math.round(Number(amount) * 100)
     const newTxnId = `txn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const isOutgoing = type === 'outgoing' || type === 'withdrawal' || type === 'transfer'
 
     // Ensure seed default user exists in database
     const defaultUserId = DEMO_DEFAULT_USER_ID
@@ -158,6 +227,22 @@ export async function POST(req: Request) {
       ? currentBalanceCents + amountInCents
       : currentBalanceCents - amountInCents
 
+    let dailyLimit = dailyLimitSnapshot(0)
+    if (isOutgoing) {
+      const usedCents = await getTodayOutgoingUsedCents(defaultUserId)
+      dailyLimit = dailyLimitSnapshot(usedCents)
+      if (amountInCents > dailyLimit.remainingCents) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Denný limit 2000 € je vyčerpaný. Zostáva ${dailyLimit.remainingEur.toFixed(2)} €.`,
+            dailyLimit,
+          },
+          { status: 403 }
+        )
+      }
+    }
+
     // Update account balance in Supabase DB
     if (accountRecord) {
       await db
@@ -185,8 +270,15 @@ export async function POST(req: Request) {
       updatedAt: new Date(),
     })
 
+    if (isOutgoing) {
+      dailyLimit = dailyLimitSnapshot(
+        dailyLimit.usedCents + amountInCents
+      )
+    }
+
     return NextResponse.json({
       success: true,
+      dailyLimit,
       transaction: {
         id: newTxnId,
         recipient,

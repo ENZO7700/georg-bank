@@ -3,7 +3,14 @@ import { SiteGateForm } from '@/components/site-gate-form'
 
 export const metadata = {
   title: 'Not Found',
-  robots: { index: false, follow: false },
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
 }
 
 export default function GatePage() {

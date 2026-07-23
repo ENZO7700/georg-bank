@@ -4,6 +4,11 @@ import { useState, useEffect, useRef } from 'react'
 import { downloadPaymentConfirmationPdf } from '@/lib/payment-confirmation-pdf'
 import { DashboardHeader } from '@/components/dashboard-header'
 import { useSession } from '@/lib/auth-client'
+import {
+  DAILY_PAYMENT_LIMIT_EUR,
+  isOutgoingPaymentType,
+  startOfLocalDay,
+} from '@/lib/daily-payment-limit'
 
 type TransactionType = 'outgoing' | 'incoming' | 'deposit' | 'transfer'
 type TransactionFilter = 'all' | 'incoming' | 'outgoing' | 'deposit'
@@ -544,7 +549,17 @@ export default function GeorgePrototypePage() {
     setPayNote('')
   }
 
-  const executeMockPayment = () => {
+  const getTodayOutgoingUsed = (txns: Transaction[]) => {
+    const dayStart = startOfLocalDay().getTime()
+    return txns.reduce((sum, txn) => {
+      if (txn.amount >= 0 && !isOutgoingPaymentType(txn.type)) return sum
+      const created = txn.createdAt ? new Date(txn.createdAt).getTime() : Date.now()
+      if (created < dayStart) return sum
+      return sum + Math.abs(txn.amount)
+    }, 0)
+  }
+
+  const executeMockPayment = async () => {
     const recipient = payRecipient.trim()
     const iban = payIban.trim()
     const amount = parseFloat(payAmount)
@@ -558,6 +573,15 @@ export default function GeorgePrototypePage() {
 
     if (amount > state.spaceBalance) {
       showToast('Nedostatok vlastných zdrojov na SPACE účte pre túto platbu.')
+      return
+    }
+
+    const usedToday = getTodayOutgoingUsed(state.transactions)
+    const remaining = Math.max(0, DAILY_PAYMENT_LIMIT_EUR - usedToday)
+    if (amount > remaining) {
+      showToast(
+        `Denný limit ${DAILY_PAYMENT_LIMIT_EUR.toFixed(0)} €. Zostáva ${remaining.toFixed(2)} €.`
+      )
       return
     }
 
@@ -589,20 +613,48 @@ export default function GeorgePrototypePage() {
       transactions: [newTxn, ...prev.transactions],
     }))
 
-    // Sync to Supabase Database
-    fetch('/api/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipient,
-        iban,
-        vs,
-        amount,
-        note,
-        type: 'outgoing',
-        category: 'Nezaradené výdavky',
-      }),
-    }).catch((err) => console.error('Chyba ukladania do Supabase DB:', err))
+    try {
+      const res = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient,
+          iban,
+          vs,
+          amount,
+          note,
+          type: 'outgoing',
+          category: 'Nezaradené výdavky',
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.success === false) {
+        setState((prev) => ({
+          ...prev,
+          spaceBalance: balanceBefore,
+          transactions: prev.transactions.filter((t) => t.id !== txnId),
+        }))
+        showToast(data.error || 'Platbu sa nepodarilo uložiť do databázy.')
+        return
+      }
+      if (data.transaction?.id && data.transaction.id !== txnId) {
+        setState((prev) => ({
+          ...prev,
+          transactions: prev.transactions.map((t) =>
+            t.id === txnId ? { ...t, id: data.transaction.id } : t
+          ),
+        }))
+      }
+    } catch (err) {
+      console.error('Chyba ukladania do Supabase DB:', err)
+      setState((prev) => ({
+        ...prev,
+        spaceBalance: balanceBefore,
+        transactions: prev.transactions.filter((t) => t.id !== txnId),
+      }))
+      showToast('Platbu sa nepodarilo uložiť do databázy.')
+      return
+    }
 
     void downloadPaymentConfirmationPdf({
       transactionId: txnId,
@@ -1919,12 +1971,28 @@ export default function GeorgePrototypePage() {
                     <div>
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">História</p>
                       <h2 className="text-base font-bold text-white mt-1">Prehľad prevodov</h2>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Denný limit:{' '}
+                        <span className="font-semibold text-slate-200">
+                          {(
+                            DAILY_PAYMENT_LIMIT_EUR -
+                            getTodayOutgoingUsed(state.transactions)
+                          ).toFixed(2)}{' '}
+                          / {DAILY_PAYMENT_LIMIT_EUR.toFixed(0)} €
+                        </span>
+                      </p>
                     </div>
                     <div className="text-right">
                       <p className="text-[11px] text-slate-400 font-semibold">Aktuálny zostatok</p>
                       <p className="text-sm font-black text-[#179f42] mt-0.5">
                         € {formatEurSk(state.spaceBalance)}
                       </p>
+                      <a
+                        href="/pohyby"
+                        className="mt-1 inline-block text-[11px] font-semibold text-[#327bf5] hover:underline"
+                      >
+                        Live dashboard
+                      </a>
                     </div>
                   </div>
 

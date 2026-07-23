@@ -1,0 +1,215 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import { DAILY_PAYMENT_LIMIT_EUR } from '@/lib/daily-payment-limit'
+import { ArrowDownLeft, ArrowUpRight, RefreshCw } from 'lucide-react'
+
+type DailyLimit = {
+  limitEur: number
+  usedEur: number
+  remainingEur: number
+}
+
+type Movement = {
+  id: string
+  recipient: string
+  amount: number
+  createdAt: string
+  type: string
+  status: string
+  note?: string
+  balanceAfter?: number
+}
+
+function formatEur(value: number) {
+  return new Intl.NumberFormat('sk-SK', {
+    style: 'currency',
+    currency: 'EUR',
+  }).format(value)
+}
+
+function formatWhen(iso: string) {
+  return new Date(iso).toLocaleString('sk-SK', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+function isOutgoing(type: string, amount: number) {
+  if (type === 'incoming' || type === 'deposit') return false
+  if (type === 'outgoing' || type === 'withdrawal' || type === 'transfer') return true
+  return amount < 0
+}
+
+export function PohybyClient() {
+  const [movements, setMovements] = useState<Movement[]>([])
+  const [dailyLimit, setDailyLimit] = useState<DailyLimit>({
+    limitEur: DAILY_PAYMENT_LIMIT_EUR,
+    usedEur: 0,
+    remainingEur: DAILY_PAYMENT_LIMIT_EUR,
+  })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setRefreshing(true)
+    try {
+      const res = await fetch('/api/transactions', { cache: 'no-store' })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Nepodarilo sa načítať pohyby')
+      }
+      setMovements(data.transactions ?? [])
+      if (data.dailyLimit) setDailyLimit(data.dailyLimit)
+      setUpdatedAt(new Date())
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Chyba načítania')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+    const id = window.setInterval(() => void load(true), 4000)
+    return () => window.clearInterval(id)
+  }, [load])
+
+  const usedPct = Math.min(
+    100,
+    (dailyLimit.usedEur / Math.max(dailyLimit.limitEur, 1)) * 100
+  )
+
+  return (
+    <div className="min-h-[100dvh] bg-[#0b1220] text-slate-100">
+      <header className="border-b border-white/10 bg-[#0f1a2e]/90 backdrop-blur sticky top-0 z-10">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-sky-300/80">Live</p>
+            <h1 className="text-xl font-semibold tracking-tight">Pohyby na účte</h1>
+          </div>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+            data-testid="pohyby-refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Obnoviť
+          </button>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-3xl space-y-5 px-4 py-5">
+        <section
+          className="rounded-2xl border border-sky-400/20 bg-gradient-to-br from-[#13233f] to-[#0d1729] p-5 shadow-[0_0_40px_rgba(56,189,248,0.08)]"
+          data-testid="pohyby-daily-limit"
+        >
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-sm text-slate-300">Denný limit platieb</p>
+              <p className="mt-1 text-3xl font-semibold tabular-nums">
+                {formatEur(dailyLimit.remainingEur)}
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
+                zostáva z {formatEur(dailyLimit.limitEur)}
+              </p>
+            </div>
+            <div className="text-right text-sm text-slate-300">
+              <p>Dnes použité</p>
+              <p className="mt-1 text-lg font-medium tabular-nums text-amber-200">
+                {formatEur(dailyLimit.usedEur)}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-black/30">
+            <div
+              className="h-full rounded-full bg-sky-400 transition-all duration-500"
+              style={{ width: `${usedPct}%` }}
+            />
+          </div>
+          {updatedAt && (
+            <p className="mt-3 text-xs text-slate-500">
+              Aktualizované {updatedAt.toLocaleTimeString('sk-SK')}
+            </p>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-white/10 bg-[#101a2c]">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+            <h2 className="font-medium">História pohybov</h2>
+            <span className="text-xs text-slate-400">{movements.length} záznamov</span>
+          </div>
+
+          {loading ? (
+            <p className="px-4 py-8 text-center text-slate-400">Načítavam…</p>
+          ) : error ? (
+            <p className="px-4 py-8 text-center text-rose-300">{error}</p>
+          ) : movements.length === 0 ? (
+            <p className="px-4 py-8 text-center text-slate-400">
+              Zatiaľ žiadne pohyby v databáze.
+            </p>
+          ) : (
+            <ul className="divide-y divide-white/5" data-testid="pohyby-list">
+              {movements.map((m) => {
+                const outgoing = isOutgoing(m.type, m.amount)
+                const signed = outgoing ? -Math.abs(m.amount) : Math.abs(m.amount)
+                return (
+                  <li key={m.id} className="flex items-start gap-3 px-4 py-3.5">
+                    <div
+                      className={`mt-0.5 rounded-full p-2 ${
+                        outgoing
+                          ? 'bg-rose-500/15 text-rose-300'
+                          : 'bg-emerald-500/15 text-emerald-300'
+                      }`}
+                    >
+                      {outgoing ? (
+                        <ArrowUpRight className="h-4 w-4" />
+                      ) : (
+                        <ArrowDownLeft className="h-4 w-4" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="truncate font-medium text-slate-100">
+                          {m.recipient}
+                        </p>
+                        <p
+                          className={`shrink-0 tabular-nums font-semibold ${
+                            outgoing ? 'text-rose-300' : 'text-emerald-300'
+                          }`}
+                        >
+                          {outgoing ? '−' : '+'}
+                          {formatEur(Math.abs(signed))}
+                        </p>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-400">{formatWhen(m.createdAt)}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {m.status}
+                        {typeof m.balanceAfter === 'number'
+                          ? ` · zostatok ${formatEur(m.balanceAfter)}`
+                          : ''}
+                      </p>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+
+        <p className="pb-8 text-center text-xs text-slate-500">
+          Auto-obnova každé 4 s · dáta z databázy
+        </p>
+      </main>
+    </div>
+  )
+}

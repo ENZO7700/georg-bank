@@ -245,7 +245,11 @@ async function main() {
     await ensureDatabase()
   } catch (error) {
     if (process.env.VERCEL === '1') {
-      throw error
+      console.warn(
+        '[ensure-db] Continuing Vercel build without DB setup:',
+        error instanceof Error ? error.message : error
+      )
+      return
     }
     console.warn(
       '[ensure-db] Skipping database setup:',
