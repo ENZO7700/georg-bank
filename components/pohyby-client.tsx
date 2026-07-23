@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { DAILY_PAYMENT_LIMIT_EUR } from '@/lib/daily-payment-limit'
+import { subscribePohybyLive } from '@/lib/pohyby-live'
 import { ArrowDownLeft, ArrowUpRight, RefreshCw } from 'lucide-react'
 
 type DailyLimit = {
@@ -79,8 +80,21 @@ export function PohybyClient() {
 
   useEffect(() => {
     void load()
-    const id = window.setInterval(() => void load(true), 4000)
-    return () => window.clearInterval(id)
+    // Fast poll so every outgoing payment shows within ~1.5s even without BroadcastChannel.
+    const id = window.setInterval(() => void load(true), 1500)
+    const unsub = subscribePohybyLive(() => {
+      void load(true)
+    })
+    const onFocus = () => void load(true)
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void load(true)
+    })
+    return () => {
+      window.clearInterval(id)
+      unsub()
+      window.removeEventListener('focus', onFocus)
+    }
   }, [load])
 
   const usedPct = Math.min(
@@ -115,7 +129,7 @@ export function PohybyClient() {
         >
           <div className="flex items-end justify-between gap-3">
             <div>
-              <p className="text-sm text-slate-300">Denný limit platieb</p>
+              <p className="text-sm text-slate-300">Limit platieb (24 h)</p>
               <p className="mt-1 text-3xl font-semibold tabular-nums">
                 {formatEur(dailyLimit.remainingEur)}
               </p>
@@ -124,7 +138,7 @@ export function PohybyClient() {
               </p>
             </div>
             <div className="text-right text-sm text-slate-300">
-              <p>Dnes použité</p>
+              <p>Za 24 h použité</p>
               <p className="mt-1 text-lg font-medium tabular-nums text-amber-200">
                 {formatEur(dailyLimit.usedEur)}
               </p>
@@ -207,7 +221,7 @@ export function PohybyClient() {
         </section>
 
         <p className="pb-8 text-center text-xs text-slate-500">
-          Auto-obnova každé 4 s · dáta z databázy
+          Live · auto-obnova 1,5 s · každá odchádzajúca platba sa zapisuje hneď do DB
         </p>
       </main>
     </div>

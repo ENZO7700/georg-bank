@@ -41,7 +41,7 @@ export async function GET() {
             success: true,
             dailyLimit: remote.dailyLimit,
             transactions: remote.transactions,
-            accounts: [],
+            accounts: remote.accounts ?? [],
             source: 'supabase',
           })
         }

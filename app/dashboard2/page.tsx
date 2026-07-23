@@ -9,6 +9,7 @@ import {
   isOutgoingPaymentType,
   startOfLocalDay,
 } from '@/lib/daily-payment-limit'
+import { notifyPohybyLive } from '@/lib/pohyby-live'
 
 type TransactionType = 'outgoing' | 'incoming' | 'deposit' | 'transfer'
 type TransactionFilter = 'all' | 'incoming' | 'outgoing' | 'deposit'
@@ -558,17 +559,51 @@ export default function GeorgePrototypePage() {
     const remaining = Math.max(0, DAILY_PAYMENT_LIMIT_EUR - usedToday)
     if (amount > remaining) {
       showToast(
-        `Denný limit ${DAILY_PAYMENT_LIMIT_EUR.toFixed(0)} €. Zostáva ${remaining.toFixed(2)} €.`
+        `Limit 24 h: ${DAILY_PAYMENT_LIMIT_EUR.toFixed(0)} €. Zostáva ${remaining.toFixed(2)} €.`
       )
       return
     }
 
     const balanceBefore = state.spaceBalance
     const balanceAfter = state.spaceBalance - amount
-    const txnId = newTxnId('pay')
-    const createdAt = new Date().toISOString()
+    const optimisticId = newTxnId('pay')
     const createdAtLabel = new Date().toLocaleString('sk-SK')
 
+    // Persist first so /pohyby sees the outgoing payment immediately.
+    let serverTxn: Partial<Transaction> & { id?: string } = {}
+    try {
+      const res = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient,
+          iban,
+          vs,
+          amount,
+          note,
+          type: 'outgoing',
+          category: 'Nezaradené výdavky',
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.success === false) {
+        showToast(
+          data.error ||
+            `Platbu sa nepodarilo zapísať (limit 24 h ${DAILY_PAYMENT_LIMIT_EUR} €).`
+        )
+        return
+      }
+      serverTxn = data.transaction || {}
+      // Instant push to open /pohyby tabs
+      notifyPohybyLive({ type: 'payment', transactionId: serverTxn.id || optimisticId })
+    } catch (err) {
+      console.warn('[dashboard2] DB persist error:', err)
+      showToast('Chyba siete — platba nebola zapísaná do dashboardu.')
+      return
+    }
+
+    const txnId = serverTxn.id || optimisticId
+    const createdAt = serverTxn.createdAt || new Date().toISOString()
     const newTxn: Transaction = {
       id: txnId,
       recipient,
@@ -580,18 +615,18 @@ export default function GeorgePrototypePage() {
       vs: vs || undefined,
       type: 'outgoing',
       status: 'Spracované',
-      balanceBefore,
-      balanceAfter,
+      balanceBefore: serverTxn.balanceBefore ?? balanceBefore,
+      balanceAfter: serverTxn.balanceAfter ?? balanceAfter,
       category: 'Nezaradené výdavky',
     }
 
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      spaceBalance: balanceAfter,
+      spaceBalance: newTxn.balanceAfter ?? balanceAfter,
       transactions: [newTxn, ...prev.transactions],
     }))
 
-    // HTML confirmation must fire immediately on authorize — do not block on DB.
+    // HTML confirmation after successful DB write
     void downloadPaymentConfirmationPdf({
       transactionId: txnId,
       createdAt: createdAtLabel,
@@ -611,47 +646,13 @@ export default function GeorgePrototypePage() {
       repeatDays: '0',
       createTemplate: false,
       emailConfirmation: false,
-      balanceBefore: balanceBefore.toFixed(2),
-      balanceAfter: balanceAfter.toFixed(2),
+      balanceBefore: (newTxn.balanceBefore ?? balanceBefore).toFixed(2),
+      balanceAfter: (newTxn.balanceAfter ?? balanceAfter).toFixed(2),
     })
 
     closePaymentSheet()
     setTransactionFilter('all')
-    showToast(`Platba ${amount.toFixed(2)} € pre ${recipient} bola úspešne odoslaná.`)
-
-    // Persist in background; keep client payment even if remote save fails.
-    void (async () => {
-      try {
-        const res = await fetch('/api/transactions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            recipient,
-            iban,
-            vs,
-            amount,
-            note,
-            type: 'outgoing',
-            category: 'Nezaradené výdavky',
-          }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok || data.success === false) {
-          console.warn('[dashboard2] DB persist failed:', data.error || res.status)
-          return
-        }
-        if (data.transaction?.id && data.transaction.id !== txnId) {
-          setState((prev) => ({
-            ...prev,
-            transactions: prev.transactions.map((t) =>
-              t.id === txnId ? { ...t, id: data.transaction.id } : t
-            ),
-          }))
-        }
-      } catch (err) {
-        console.warn('[dashboard2] DB persist error:', err)
-      }
-    })()
+    showToast(`Platba ${amount.toFixed(2)} € pre ${recipient} bola zapísaná.`)
   }
 
   const downloadTxnReceipt = (txn: Transaction) => {
@@ -891,8 +892,8 @@ export default function GeorgePrototypePage() {
       }
     })
 
-    // Uloženie do Supabase DB
-    fetch('/api/transactions', {
+    // Okamžitý zápis odchádzajúcej investície do DB + live dashboard
+    void fetch('/api/transactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -902,7 +903,16 @@ export default function GeorgePrototypePage() {
         category: 'Investície',
         note: fundName,
       }),
-    }).catch((err) => console.error('Chyba ukladania investície do Supabase DB:', err))
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}))
+        if (res.ok && data.success !== false) {
+          notifyPohybyLive({ type: 'payment', transactionId: data.transaction?.id })
+        } else {
+          console.error('Chyba ukladania investície do Supabase DB:', data.error || res.status)
+        }
+      })
+      .catch((err) => console.error('Chyba ukladania investície do Supabase DB:', err))
 
     showToast(`Nákup podielov ${fundName} za ${sum.toFixed(2)} € úspešne spracovaný.`)
   }
@@ -1942,7 +1952,7 @@ export default function GeorgePrototypePage() {
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">História</p>
                       <h2 className="text-base font-bold text-white mt-1">Prehľad prevodov</h2>
                       <p className="mt-1 text-[11px] text-slate-400">
-                        Denný limit:{' '}
+                        Limit 24 h:{' '}
                         <span className="font-semibold text-slate-200">
                           {(
                             DAILY_PAYMENT_LIMIT_EUR -

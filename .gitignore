@@ -1,1 +1,7 @@
 .vercel
+
+# local/tmp artifacts
+tmp-*
+playwright-report/
+test-results/
+.vercel.bak*/

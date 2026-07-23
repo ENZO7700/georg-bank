@@ -6,6 +6,7 @@ import {
   DEMO_DEFAULT_USER_NAME,
 } from '@/lib/demo-user'
 import {
+  DAILY_PAYMENT_LIMIT_CENTS,
   DAILY_PAYMENT_LIMIT_EUR,
   dailyLimitSnapshot,
   isOutgoingPaymentType,
@@ -188,9 +189,36 @@ export async function listMovementsViaSupabase(limit = 100) {
     .filter((t) => isOutgoingPaymentType(t.type))
     .reduce((sum, t) => sum + Math.abs(t.amount), 0)
 
+  const account = await ensureDemoBankAccount(
+    supabase,
+    DEMO_DEFAULT_USER_ID,
+    DAILY_PAYMENT_LIMIT_CENTS
+  )
+  // One-shot recovery: if the demo account is effectively empty, fund it to the 24h limit.
+  if (account && (account.balance ?? 0) < 100) {
+    await supabase
+      .from('bank_account')
+      .update({
+        balance: DAILY_PAYMENT_LIMIT_CENTS,
+        updatedAt: new Date().toISOString(),
+      })
+      .eq('id', account.id)
+    account.balance = DAILY_PAYMENT_LIMIT_CENTS
+  }
+
   return {
     transactions: (data ?? []).map(mapTxn),
     dailyLimit: dailyLimitSnapshot(usedToday || usedCents),
+    accounts: account
+      ? [
+          {
+            id: account.id,
+            balance: account.balance ?? DAILY_PAYMENT_LIMIT_CENTS,
+            accountNumber: account.accountNumber,
+            currency: 'EUR',
+          },
+        ]
+      : [],
   }
 }
 
@@ -227,10 +255,22 @@ export async function createMovementViaSupabase(input: {
     { onConflict: 'id' }
   )
 
-  const SEED_BALANCE_CENTS = 10_000
+  // New accounts start with full 24h allowance; only auto-refill when empty (< 1 €).
+  const SEED_BALANCE_CENTS = DAILY_PAYMENT_LIMIT_CENTS
   let account = await ensureDemoBankAccount(supabase, defaultUserId, SEED_BALANCE_CENTS)
   if (!account) {
     return { error: 'Nepodarilo sa pripraviť demo účet', status: 500 as const }
+  }
+
+  if ((account.balance ?? 0) < 100) {
+    const { data: topped } = await supabase
+      .from('bank_account')
+      .update({ balance: SEED_BALANCE_CENTS, updatedAt: new Date().toISOString() })
+      .eq('id', account.id)
+      .select('*')
+      .single()
+    if (topped) account = topped as BankAccountRow
+    else account = { ...account, balance: SEED_BALANCE_CENTS }
   }
 
   const todayStart = startOfLocalDay().toISOString()

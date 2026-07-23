@@ -185,7 +185,7 @@ async function ensureDemoAccountBalance(pool: Pool) {
     return
   }
 
-  const SEED_CENTS = 10_000 // €100
+  const SEED_CENTS = 666_000 // €6660 — matches 24h payment limit
   const defaultUserId = DEMO_DEFAULT_USER_ID
 
   await pool.query(
