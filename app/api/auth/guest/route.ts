@@ -3,6 +3,7 @@ import {
   GUEST_USER_EMAIL,
   GUEST_USER_NAME,
   GUEST_USER_PASSWORD,
+  isDedicatedGuestEmail,
   syncGuestCredentialPassword,
 } from '@/lib/guest-auth'
 import { NextRequest, NextResponse } from 'next/server'
@@ -33,6 +34,17 @@ function serverAuthHeaders(request: NextRequest) {
 }
 
 async function ensureGuestSignedIn(request: NextRequest) {
+  if (!isDedicatedGuestEmail(GUEST_USER_EMAIL)) {
+    console.error(
+      '[guest-auth] Refusing guest login: GUEST_USER_EMAIL must end with @local.test, got:',
+      GUEST_USER_EMAIL
+    )
+    return new Response(JSON.stringify({ error: 'Guest auth misconfigured' }), {
+      status: 500,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
   const headers = serverAuthHeaders(request)
   const credentials = {
     email: GUEST_USER_EMAIL,
