@@ -33,15 +33,24 @@ async function getTodayOutgoingUsedCents(userId: string) {
 export async function GET() {
   try {
     if (createServiceSupabase()) {
-      const remote = await listMovementsViaSupabase(100)
-      if (remote) {
-        return NextResponse.json({
-          success: true,
-          dailyLimit: remote.dailyLimit,
-          transactions: remote.transactions,
-          accounts: [],
-          source: 'supabase',
-        })
+      try {
+        const remote = await listMovementsViaSupabase(100)
+        if (remote) {
+          return NextResponse.json({
+            success: true,
+            dailyLimit: remote.dailyLimit,
+            transactions: remote.transactions,
+            accounts: [],
+            source: 'supabase',
+          })
+        }
+      } catch (supabaseError) {
+        // Prefer surfacing Supabase failure over falling through to broken localhost Drizzle.
+        console.error('[API /api/transactions GET] Supabase error:', supabaseError)
+        return NextResponse.json(
+          { success: false, error: 'Supabase unavailable', source: 'supabase' },
+          { status: 502 }
+        )
       }
     }
 

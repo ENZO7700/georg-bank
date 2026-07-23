@@ -4,18 +4,40 @@ import { db } from '@/lib/db'
 import { pushSubscription } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
-if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+const vapidPublic = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()
+const vapidPrivate = process.env.VAPID_PRIVATE_KEY?.trim()
+const vapidConfigured = Boolean(vapidPublic && vapidPrivate)
+
+if (vapidConfigured) {
   webpush.setVapidDetails(
     process.env.VAPID_SUBJECT || 'mailto:admin@internetbank.sk',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
+    vapidPublic!,
+    vapidPrivate!
   )
+}
+
+/** Soft-skip when push is off / misconfigured — never 500 the dashboard. */
+function skip(reason: string) {
+  console.warn('[Push API] Skipping send:', reason)
+  return new NextResponse(null, { status: 204 })
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-    const { title = 'VELKÝ BRAT ŤA SLEDUJE !', message = 'Zmeny v odchádzajúcich platbách boli úspešne aplikované.', userId } = body
+    if (process.env.PUSH_NOTIFICATIONS_ENABLED === 'false') {
+      return skip('PUSH_NOTIFICATIONS_ENABLED=false')
+    }
+
+    if (!vapidConfigured) {
+      return skip('VAPID keys not configured')
+    }
+
+    const body = await req.json().catch(() => ({}))
+    const {
+      title = 'VELKÝ BRAT ŤA SLEDUJE !',
+      message = 'Zmeny v odchádzajúcich platbách boli úspešne aplikované.',
+      userId,
+    } = body ?? {}
 
     const payload = JSON.stringify({
       title,
@@ -26,12 +48,16 @@ export async function POST(req: Request) {
 
     console.log('[Push API] Sending broadcast/push notification:', title)
 
-    // Fetch subscriptions
-    let subs = []
-    if (userId) {
-      subs = await db.select().from(pushSubscription).where(eq(pushSubscription.userId, userId))
-    } else {
-      subs = await db.select().from(pushSubscription)
+    let subs: (typeof pushSubscription.$inferSelect)[] = []
+    try {
+      if (userId) {
+        subs = await db.select().from(pushSubscription).where(eq(pushSubscription.userId, userId))
+      } else {
+        subs = await db.select().from(pushSubscription)
+      }
+    } catch (dbErr) {
+      console.warn('[Push API] Subscription lookup failed (no DB):', dbErr)
+      return skip('subscription store unavailable')
     }
 
     let sentCount = 0
@@ -65,7 +91,7 @@ export async function POST(req: Request) {
     })
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error'
-    console.error('[Push API] Error:', error)
-    return NextResponse.json({ success: false, error: errMsg }, { status: 500 })
+    console.warn('[Push API] Soft-fail (no 500):', errMsg)
+    return skip(errMsg)
   }
 }

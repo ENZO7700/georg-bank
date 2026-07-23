@@ -81,40 +81,7 @@ export function DashboardClient({ accounts, transactions }: DashboardClientProps
     return () => window.removeEventListener('open-transfer-modal', handleOpen)
   }, [])
 
-  // Auto trigger push notification & request permission
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      if (Notification.permission === 'default') {
-        Notification.requestPermission().then((permission) => {
-          if (permission === 'granted') {
-            new Notification('VEĽKÝ BRAT ŤA SLEDUJE ! 👁️', {
-              body: '5 odchádzajúcich platieb bolo zvýraznených na červeno v prehľade prevodov.',
-              icon: '/icons/icon-192x192.png',
-            })
-          }
-        })
-      } else if (Notification.permission === 'granted') {
-        try {
-          new Notification('VEĽKÝ BRAT ŤA SLEDUJE ! 👁️', {
-            body: '5 odchádzajúcich platieb bolo zvýraznených na červeno v prehľade prevodov.',
-            icon: '/icons/icon-192x192.png',
-          })
-        } catch (e) {
-          console.log('Native notification error fallback', e)
-        }
-      }
-    }
-
-    // Call server Web Push API broadcast
-    fetch('/api/push/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: 'VEĽKÝ BRAT ŤA SLEDUJE ! 👁️',
-        message: '5 odchádzajúcich platieb bolo pripnutých a zvýraznených na červeno.',
-      }),
-    }).catch((err) => console.error('Push API call failed:', err))
-  }, [])
+  // Auto push / browser notifications disabled (were spamming /api/push/send on load).
 
   // Use the active account ID or fallback
   const activeAccount = accounts[0]

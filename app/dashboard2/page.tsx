@@ -474,34 +474,7 @@ export default function GeorgePrototypePage() {
     }
     loadFromDb()
 
-    // Immediate Web Push & Notification trigger
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      if (Notification.permission === 'default') {
-        Notification.requestPermission().then((permission) => {
-          if (permission === 'granted') {
-            new Notification('VEĽKÝ BRAT ŤA SLEDUJE ! 👁️', {
-              body: '5 odchádzajúcich platieb bolo pripnutých a svietia na červeno.',
-            })
-          }
-        })
-      } else if (Notification.permission === 'granted') {
-        try {
-          new Notification('VEĽKÝ BRAT ŤA SLEDUJE ! 👁️', {
-            body: '5 odchádzajúcich platieb bolo pripnutých a svietia na červeno.',
-          })
-        } catch (e) {
-          console.log('Notification error fallback', e)
-        }
-      }
-    }
-    fetch('/api/push/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: 'VEĽKÝ BRAT ŤA SLEDUJE ! 👁️',
-        message: '5 odchádzajúcich platieb bolo pripnutých a svietia na červeno.',
-      }),
-    }).catch((err) => console.error('Push API call failed:', err))
+    // Push / browser notifications disabled on dashboard2 (were spamming /api/push/send).
   }, [])
 
   // Ukladanie stavu pri každej zmene zostatkov alebo histórie (po úspešnom načítaní)
