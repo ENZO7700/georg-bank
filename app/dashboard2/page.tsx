@@ -1460,9 +1460,6 @@ export default function GeorgePrototypePage() {
                       <h3 className="text-base font-bold text-white text-center leading-snug">
                         {usePasswordInput ? 'Zadajte heslo' : 'Zadajte bezpečnostný PIN'}
                       </h3>
-                      <p className="text-[10px] text-[#7f8596] mt-1 text-center max-w-55">
-                        {usePasswordInput ? 'Zadajte vaše prístupové heslo k bráne' : 'Zadajte 6-miestny PIN kód pre vstup do Georgea (666666)'}
-                      </p>
 
                       {loginError && (
                         <p className="text-[11px] text-red-400 font-bold mt-3 bg-red-950/20 border border-red-500/20 rounded-xl px-3 py-1.5 text-center animate-pulse">
