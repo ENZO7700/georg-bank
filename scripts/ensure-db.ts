@@ -201,12 +201,31 @@ async function ensureDemoAccountBalance(pool: Pool) {
   )
 
   if (existing.rows.length === 0) {
+    // Reclaim shared demo IBAN if it still belongs to a legacy user id.
+    const byIban = await pool.query(
+      `SELECT id, balance FROM "bank_account" WHERE "accountNumber" = $1 LIMIT 1`,
+      ['SK3109000000005012345678']
+    )
+    if (byIban.rows.length > 0) {
+      await pool.query(
+        `UPDATE "bank_account"
+         SET "userId" = $1, balance = GREATEST(balance, $2), "updatedAt" = NOW()
+         WHERE id = $3`,
+        [defaultUserId, SEED_CENTS, byIban.rows[0].id]
+      )
+      console.log('[ensure-db] Demo bank account reclaimed onto peter and topped up.')
+      return
+    }
+
     await pool.query(
       `INSERT INTO "bank_account" (
          id, "userId", "accountNumber", "displayName", "accountType",
          balance, currency, "isActive", "createdAt", "updatedAt"
        ) VALUES ($1, $2, 'SK3109000000005012345678', 'Osobný účet', 'checking', $3, 'EUR', true, NOW(), NOW())
-       ON CONFLICT (id) DO NOTHING`,
+       ON CONFLICT ("accountNumber") DO UPDATE
+         SET "userId" = EXCLUDED."userId",
+             balance = GREATEST("bank_account".balance, EXCLUDED.balance),
+             "updatedAt" = NOW()`,
       ['acc-demo-default', defaultUserId, SEED_CENTS]
     )
     console.log('[ensure-db] Demo bank account seeded with €100.')

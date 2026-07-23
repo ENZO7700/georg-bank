@@ -191,7 +191,8 @@ export async function POST(req: Request) {
         .where(eq(user.id, defaultUserId))
     }
 
-    // Find or create default bank account
+    // Find or create default bank account (reclaim legacy Filip / shared demo IBAN)
+    const DEMO_ACCOUNT_NUMBER = 'SK3109000000005012345678'
     let accountRecord = await db.query.bankAccount.findFirst({
       where: (t, { eq }) => eq(t.userId, defaultUserId),
     })
@@ -210,25 +211,50 @@ export async function POST(req: Request) {
       }
     }
 
+    if (!accountRecord) {
+      const byIban = await db.query.bankAccount.findFirst({
+        where: (t, { eq }) => eq(t.accountNumber, DEMO_ACCOUNT_NUMBER),
+      })
+      if (byIban) {
+        await db
+          .update(bankAccount)
+          .set({ userId: defaultUserId, updatedAt: new Date() })
+          .where(eq(bankAccount.id, byIban.id))
+        accountRecord = { ...byIban, userId: defaultUserId }
+      }
+    }
+
     // €100 seed so CI / multi-test runs do not exhaust the shared demo account
     const SEED_BALANCE_CENTS = 10_000
 
     if (!accountRecord) {
       const newAccId = `acc-${Date.now()}`
-      await db.insert(bankAccount).values({
-        id: newAccId,
-        userId: defaultUserId,
-        accountNumber: 'SK3109000000005012345678',
-        displayName: 'Osobný účet',
-        accountType: 'checking',
-        balance: SEED_BALANCE_CENTS,
-        currency: 'EUR',
-        isActive: true,
-      }).onConflictDoNothing()
-
-      accountRecord = await db.query.bankAccount.findFirst({
-        where: (t, { eq }) => eq(t.id, newAccId),
-      })
+      try {
+        await db.insert(bankAccount).values({
+          id: newAccId,
+          userId: defaultUserId,
+          accountNumber: DEMO_ACCOUNT_NUMBER,
+          displayName: 'Osobný účet',
+          accountType: 'checking',
+          balance: SEED_BALANCE_CENTS,
+          currency: 'EUR',
+          isActive: true,
+        })
+        accountRecord = await db.query.bankAccount.findFirst({
+          where: (t, { eq }) => eq(t.id, newAccId),
+        })
+      } catch {
+        const existing = await db.query.bankAccount.findFirst({
+          where: (t, { eq }) => eq(t.accountNumber, DEMO_ACCOUNT_NUMBER),
+        })
+        if (existing) {
+          await db
+            .update(bankAccount)
+            .set({ userId: defaultUserId, updatedAt: new Date() })
+            .where(eq(bankAccount.id, existing.id))
+          accountRecord = { ...existing, userId: defaultUserId }
+        }
+      }
     }
 
     const currentBalanceCents = accountRecord?.balance ?? SEED_BALANCE_CENTS

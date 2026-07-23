@@ -24,8 +24,9 @@ function skip(reason: string) {
 
 export async function POST(req: Request) {
   try {
-    if (process.env.PUSH_NOTIFICATIONS_ENABLED === 'false') {
-      return skip('PUSH_NOTIFICATIONS_ENABLED=false')
+    // Opt-in only — default off so dashboards never spam /api/push/send.
+    if (process.env.PUSH_NOTIFICATIONS_ENABLED !== 'true') {
+      return skip('PUSH_NOTIFICATIONS_ENABLED is not true')
     }
 
     if (!vapidConfigured) {

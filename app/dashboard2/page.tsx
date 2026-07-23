@@ -586,49 +586,7 @@ export default function GeorgePrototypePage() {
       transactions: [newTxn, ...prev.transactions],
     }))
 
-    try {
-      const res = await fetch('/api/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipient,
-          iban,
-          vs,
-          amount,
-          note,
-          type: 'outgoing',
-          category: 'Nezaradené výdavky',
-        }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data.success === false) {
-        setState((prev) => ({
-          ...prev,
-          spaceBalance: balanceBefore,
-          transactions: prev.transactions.filter((t) => t.id !== txnId),
-        }))
-        showToast(data.error || 'Platbu sa nepodarilo uložiť do databázy.')
-        return
-      }
-      if (data.transaction?.id && data.transaction.id !== txnId) {
-        setState((prev) => ({
-          ...prev,
-          transactions: prev.transactions.map((t) =>
-            t.id === txnId ? { ...t, id: data.transaction.id } : t
-          ),
-        }))
-      }
-    } catch (err) {
-      console.error('Chyba ukladania do Supabase DB:', err)
-      setState((prev) => ({
-        ...prev,
-        spaceBalance: balanceBefore,
-        transactions: prev.transactions.filter((t) => t.id !== txnId),
-      }))
-      showToast('Platbu sa nepodarilo uložiť do databázy.')
-      return
-    }
-
+    // HTML confirmation must fire immediately on authorize — do not block on DB.
     void downloadPaymentConfirmationPdf({
       transactionId: txnId,
       createdAt: createdAtLabel,
@@ -655,6 +613,40 @@ export default function GeorgePrototypePage() {
     closePaymentSheet()
     setTransactionFilter('all')
     showToast(`Platba ${amount.toFixed(2)} € pre ${recipient} bola úspešne odoslaná.`)
+
+    // Persist in background; keep client payment even if remote save fails.
+    void (async () => {
+      try {
+        const res = await fetch('/api/transactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient,
+            iban,
+            vs,
+            amount,
+            note,
+            type: 'outgoing',
+            category: 'Nezaradené výdavky',
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || data.success === false) {
+          console.warn('[dashboard2] DB persist failed:', data.error || res.status)
+          return
+        }
+        if (data.transaction?.id && data.transaction.id !== txnId) {
+          setState((prev) => ({
+            ...prev,
+            transactions: prev.transactions.map((t) =>
+              t.id === txnId ? { ...t, id: data.transaction.id } : t
+            ),
+          }))
+        }
+      } catch (err) {
+        console.warn('[dashboard2] DB persist error:', err)
+      }
+    })()
   }
 
   const downloadTxnReceipt = (txn: Transaction) => {

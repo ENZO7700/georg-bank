@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
   DEMO_DEFAULT_USER_EMAIL,
   DEMO_DEFAULT_USER_ID,
+  DEMO_DEFAULT_USER_LEGACY_IDS,
   DEMO_DEFAULT_USER_NAME,
 } from '@/lib/demo-user'
 import {
@@ -9,6 +10,97 @@ import {
   isOutgoingPaymentType,
   startOfLocalDay,
 } from '@/lib/daily-payment-limit'
+
+const DEMO_ACCOUNT_NUMBER = 'SK3109000000005012345678'
+
+type BankAccountRow = {
+  id: string
+  userId: string
+  accountNumber: string
+  balance: number | null
+  [key: string]: unknown
+}
+
+/** Find/create demo account; reclaim legacy Filip rows sharing the demo IBAN. */
+async function ensureDemoBankAccount(
+  supabase: SupabaseClient,
+  defaultUserId: string,
+  seedBalanceCents: number
+): Promise<BankAccountRow | null> {
+  const { data: owned } = await supabase
+    .from('bank_account')
+    .select('*')
+    .eq('userId', defaultUserId)
+    .limit(1)
+  if (owned?.[0]) return owned[0] as BankAccountRow
+
+  const { data: legacy } = await supabase
+    .from('bank_account')
+    .select('*')
+    .in('userId', [...DEMO_DEFAULT_USER_LEGACY_IDS])
+    .limit(1)
+  if (legacy?.[0]) {
+    const { data: updated, error } = await supabase
+      .from('bank_account')
+      .update({ userId: defaultUserId, updatedAt: new Date().toISOString() })
+      .eq('id', legacy[0].id)
+      .select('*')
+      .single()
+    if (!error && updated) return updated as BankAccountRow
+    return { ...(legacy[0] as BankAccountRow), userId: defaultUserId }
+  }
+
+  const { data: byIban } = await supabase
+    .from('bank_account')
+    .select('*')
+    .eq('accountNumber', DEMO_ACCOUNT_NUMBER)
+    .limit(1)
+  if (byIban?.[0]) {
+    const { data: updated, error } = await supabase
+      .from('bank_account')
+      .update({ userId: defaultUserId, updatedAt: new Date().toISOString() })
+      .eq('id', byIban[0].id)
+      .select('*')
+      .single()
+    if (!error && updated) return updated as BankAccountRow
+    return { ...(byIban[0] as BankAccountRow), userId: defaultUserId }
+  }
+
+  const newAccId = `acc-${Date.now()}`
+  const { data: created, error: accErr } = await supabase
+    .from('bank_account')
+    .insert({
+      id: newAccId,
+      userId: defaultUserId,
+      accountNumber: DEMO_ACCOUNT_NUMBER,
+      displayName: 'Osobný účet',
+      accountType: 'checking',
+      balance: seedBalanceCents,
+      currency: 'EUR',
+      isActive: true,
+    })
+    .select('*')
+    .single()
+
+  if (!accErr && created) return created as BankAccountRow
+
+  // Race / unique conflict: load existing IBAN row and reclaim.
+  const { data: conflict } = await supabase
+    .from('bank_account')
+    .select('*')
+    .eq('accountNumber', DEMO_ACCOUNT_NUMBER)
+    .limit(1)
+  if (conflict?.[0]) {
+    await supabase
+      .from('bank_account')
+      .update({ userId: defaultUserId, updatedAt: new Date().toISOString() })
+      .eq('id', conflict[0].id)
+    return { ...(conflict[0] as BankAccountRow), userId: defaultUserId }
+  }
+
+  if (accErr) throw new Error(accErr.message)
+  return null
+}
 
 export function createServiceSupabase(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
@@ -134,33 +226,10 @@ export async function createMovementViaSupabase(input: {
     { onConflict: 'id' }
   )
 
-  const { data: accounts } = await supabase
-    .from('bank_account')
-    .select('*')
-    .eq('userId', defaultUserId)
-    .limit(1)
-
-  let account = accounts?.[0] ?? null
   const SEED_BALANCE_CENTS = 10_000
-
+  let account = await ensureDemoBankAccount(supabase, defaultUserId, SEED_BALANCE_CENTS)
   if (!account) {
-    const newAccId = `acc-${Date.now()}`
-    const { data: created, error: accErr } = await supabase
-      .from('bank_account')
-      .insert({
-        id: newAccId,
-        userId: defaultUserId,
-        accountNumber: 'SK3109000000005012345678',
-        displayName: 'Osobný účet',
-        accountType: 'checking',
-        balance: SEED_BALANCE_CENTS,
-        currency: 'EUR',
-        isActive: true,
-      })
-      .select('*')
-      .single()
-    if (accErr) throw new Error(accErr.message)
-    account = created
+    return { error: 'Nepodarilo sa pripraviť demo účet', status: 500 as const }
   }
 
   const todayStart = startOfLocalDay().toISOString()
