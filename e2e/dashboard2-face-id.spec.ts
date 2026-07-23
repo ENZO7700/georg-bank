@@ -63,9 +63,9 @@ test.describe('dashboard2 – Face ID + PIN (agent delivery)', () => {
     await expect(page.locator('#face-api-script')).toHaveCount(0)
   })
 
-  test('PIN 2366 logs in without success toast', async ({ page }) => {
+  test('PIN 666666 logs in without success toast', async ({ page }) => {
     await openPinScreen(page)
-    await enterPin(page, '2366')
+    await enterPin(page, '666666')
 
     await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible({ timeout: 15000 })
 
@@ -85,13 +85,12 @@ test.describe('dashboard2 – Face ID + PIN (agent delivery)', () => {
 
   test('wrong PIN shows error and stays on keypad', async ({ page }) => {
     await openPinScreen(page)
-    await enterPin(page, '0000')
+    await enterPin(page, '000000')
 
     await expect(page.getByText(/Nesprávny PIN/i)).toBeVisible({ timeout: 10000 })
     await expect(page.getByRole('button', { name: '1', exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toHaveCount(0)
   })
-
   test('Face ID button opens overlay; Zrušiť closes it', async ({ page }) => {
     await installFaceIdMocks(page, { detectFace: false })
     await openPinScreen(page)
