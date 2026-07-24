@@ -65,25 +65,65 @@ const SEED_TRANSACTIONS: Transaction[] = [
   },
 ]
 
+/** Parse "Name (note) IBAN: SK… VS: 123" from API description blobs. */
+function parseMovementDescription(description: string | undefined | null): {
+  recipient: string
+  note?: string
+  iban?: string
+  vs?: string
+} {
+  const raw = (description || '').trim()
+  if (!raw) return { recipient: 'Neznáma transakcia' }
+
+  const ibanMatch = raw.match(/IBAN:\s*([A-Za-z0-9 ]+)/i)
+  const vsMatch = raw.match(/VS:\s*([A-Za-z0-9]+)/i)
+  let head = raw
+    .replace(/\s*IBAN:\s*[A-Za-z0-9 ]+/i, '')
+    .replace(/\s*VS:\s*[A-Za-z0-9]+/i, '')
+    .trim()
+  const noteMatch = head.match(/^(.*?)\s*\((.*)\)\s*$/)
+  if (noteMatch) {
+    return {
+      recipient: noteMatch[1].trim() || 'Neznáma transakcia',
+      note: noteMatch[2].trim() || undefined,
+      iban: ibanMatch?.[1]?.replace(/\s+/g, '').toUpperCase(),
+      vs: vsMatch?.[1],
+    }
+  }
+  return {
+    recipient: head || 'Neznáma transakcia',
+    iban: ibanMatch?.[1]?.replace(/\s+/g, '').toUpperCase(),
+    vs: vsMatch?.[1],
+  }
+}
+
 function normalizeTransaction(raw: Partial<Transaction> & { recipient?: string; amount?: number }): Transaction {
-  const amount = Number(raw.amount ?? 0)
+  const rawAmount = Number(raw.amount ?? 0)
   const inferredType: TransactionType =
     raw.type ??
-    (amount < 0 ? 'outgoing' : amount > 0 && raw.recipient?.toLowerCase().includes('dobitie')
+    (rawAmount < 0 ? 'outgoing' : rawAmount > 0 && raw.recipient?.toLowerCase().includes('dobitie')
       ? 'deposit'
-      : amount > 0
+      : rawAmount > 0
         ? 'incoming'
         : 'outgoing')
 
+  // DB stores outgoing amounts as positive cents; UI uses negative for outgoing.
+  const amount =
+    inferredType === 'outgoing' || inferredType === 'transfer'
+      ? -Math.abs(rawAmount)
+      : Math.abs(rawAmount)
+
+  const parsed = parseMovementDescription(raw.recipient || raw.note)
+
   return {
     id: raw.id || `legacy-${Math.random().toString(36).slice(2, 10)}`,
-    recipient: raw.recipient || 'Neznáma transakcia',
+    recipient: parsed.recipient !== 'Neznáma transakcia' ? parsed.recipient : raw.recipient || 'Neznáma transakcia',
     amount,
     date: raw.date || 'Dnes',
     createdAt: raw.createdAt || new Date().toISOString(),
-    note: raw.note,
-    iban: raw.iban,
-    vs: raw.vs,
+    note: raw.note && !raw.note.includes('IBAN:') ? raw.note : parsed.note,
+    iban: raw.iban || parsed.iban,
+    vs: raw.vs || parsed.vs,
     type: inferredType,
     status: raw.status || 'Spracované',
     balanceBefore: raw.balanceBefore,
@@ -650,11 +690,18 @@ export default function GeorgePrototypePage() {
   }
 
   const downloadTxnReceipt = (txn: Transaction) => {
-    if (txn.amount >= 0) {
+    const isOutgoing =
+      txn.type === 'outgoing' || txn.type === 'transfer' || txn.amount < 0
+    if (!isOutgoing) {
       showToast('Doklad je dostupný len pre odchádzajúce platby.')
       return
     }
     const abs = Math.abs(txn.amount)
+    const parsed = parseMovementDescription(
+      [txn.recipient, txn.note, txn.iban ? `IBAN: ${txn.iban}` : '', txn.vs ? `VS: ${txn.vs}` : '']
+        .filter(Boolean)
+        .join(' ')
+    )
     void downloadPaymentConfirmationPdf({
       transactionId: txn.id,
       createdAt: txn.createdAt
@@ -663,14 +710,15 @@ export default function GeorgePrototypePage() {
       status: 'Štandardný platobný príkaz',
       transferType: 'external',
       fromAccountNumber: 'SK90 0900 0000 0000 9876 5432',
-      recipientName: txn.recipient,
-      recipientAccountOrEmail: txn.iban || 'SK00 0000 0000 0000 0000 0000',
+      recipientName: parsed.recipient || txn.recipient,
+      recipientAccountOrEmail:
+        txn.iban || parsed.iban || 'SK00 0000 0000 0000 0000 0000',
       amount: abs.toFixed(2),
       currency: 'EUR',
-      variableSymbol: txn.vs || '',
+      variableSymbol: txn.vs || parsed.vs || '',
       constantSymbol: '0308',
       specificSymbol: '',
-      note: txn.note || 'Platba cez mobilnú verziu George',
+      note: parsed.note || txn.note || 'Platba cez mobilnú verziu George',
       payerReference: '',
       dueDate: txn.date,
       repeatDays: '0',
@@ -2453,7 +2501,9 @@ export default function GeorgePrototypePage() {
                 ))}
               </div>
 
-              {selectedTransaction.amount < 0 && (
+              {(selectedTransaction.type === 'outgoing' ||
+                selectedTransaction.type === 'transfer' ||
+                selectedTransaction.amount < 0) && (
                 <div className="border-t border-slate-800/40 p-4 flex flex-col gap-2">
                   <button
                     type="button"
