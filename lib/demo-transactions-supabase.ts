@@ -147,10 +147,15 @@ function mapTxn(t: {
   balanceBefore: number | null
   balanceAfter: number | null
 }): MovementRow {
+  const euros = t.amount / 100
+  const signed =
+    t.type === 'outgoing' || t.type === 'withdrawal' || t.type === 'transfer'
+      ? -Math.abs(euros)
+      : Math.abs(euros)
   return {
     id: t.id,
     recipient: t.description || 'Platba',
-    amount: t.amount / 100,
+    amount: signed,
     date: new Date(t.createdAt).toLocaleDateString('sk-SK'),
     createdAt: new Date(t.createdAt).toISOString(),
     type: t.type,

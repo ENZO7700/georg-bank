@@ -14,7 +14,10 @@ setup('authenticate', async ({ page }) => {
   // Current app flow: site gate (if enabled) → guest auto-login → dashboard
   await gotoApp(page, '/dashboard')
   await page.waitForURL(/dashboard/, { timeout: 30000 })
-  await expect(page.getByText('SPACE účet').first()).toBeVisible({ timeout: 20000 })
+  // dashboard2 lands on the George kľúč PIN screen first; session cookie is already set
+  await expect(
+    page.getByText(/Zadajte bezpečnostný PIN|Prehľad|SPACE účet/i).first()
+  ).toBeVisible({ timeout: 20000 })
 
   await page.context().storageState({ path: authFile })
   console.log(`✅ Auth session saved to ${authFile}`)
