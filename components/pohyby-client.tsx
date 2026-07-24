@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { DAILY_PAYMENT_LIMIT_EUR } from '@/lib/daily-payment-limit'
 import { subscribePohybyLive } from '@/lib/pohyby-live'
+import { syncWidgetFromTransactionsApi } from '@/lib/widget'
 import { ArrowDownLeft, ArrowUpRight, RefreshCw } from 'lucide-react'
 
 type DailyLimit = {
@@ -79,6 +80,11 @@ export function PohybyClient() {
       if (data.topupPolicy) setTopupPolicy(data.topupPolicy)
       setUpdatedAt(new Date())
       setError('')
+      void syncWidgetFromTransactionsApi({
+        transactions: data.transactions ?? [],
+        dailyLimit: data.dailyLimit,
+        accounts: data.accounts,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chyba načítania')
     } finally {

@@ -7,7 +7,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        if let url = launchOptions?[.url] as? URL {
+            storeDeepLink(from: url)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            self.consumePendingDeepLinkIfNeeded()
+        }
         return true
     }
 
@@ -34,9 +39,51 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        storeDeepLink(from: url)
+        consumePendingDeepLinkIfNeeded()
         // Called when the app was launched with a url. Feel free to add additional processing here,
         // but if you want the App API to support tracking app url opens, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+    }
+
+    private func storeDeepLink(from url: URL) {
+        guard url.scheme?.lowercased() == "george" else { return }
+        // george://pohyby → host "pohyby"; george:///pohyby → path "/pohyby"
+        let host = (url.host ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let pathPart = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let joined = [host, pathPart].filter { !$0.isEmpty }.joined(separator: "/")
+        let path = "/" + (joined.isEmpty ? "pohyby" : joined)
+        UserDefaults.standard.set(path, forKey: AppGroupConstants.pendingDeepLinkKey)
+        WidgetSnapshotStore.defaults()?.set(path, forKey: AppGroupConstants.pendingDeepLinkKey)
+    }
+
+    private func consumePendingDeepLinkIfNeeded() {
+        let key = AppGroupConstants.pendingDeepLinkKey
+        let path =
+            UserDefaults.standard.string(forKey: key)
+            ?? WidgetSnapshotStore.defaults()?.string(forKey: key)
+        guard let path, !path.isEmpty else { return }
+        UserDefaults.standard.removeObject(forKey: key)
+        WidgetSnapshotStore.defaults()?.removeObject(forKey: key)
+
+        guard let bridgeVC = window?.rootViewController as? CAPBridgeViewController,
+              let bridge = bridgeVC.bridge else {
+            // Retry once if the WebView is still booting.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.navigateBridge(to: path)
+            }
+            return
+        }
+        _ = bridge
+        navigateBridge(to: path)
+    }
+
+    private func navigateBridge(to path: String) {
+        guard let bridgeVC = window?.rootViewController as? CAPBridgeViewController,
+              let bridge = bridgeVC.bridge else { return }
+        let escaped = path.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        bridge.eval(js: "window.location.href = '\(escaped)';")
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {

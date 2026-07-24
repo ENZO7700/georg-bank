@@ -10,6 +10,7 @@ import {
   startOfLocalDay,
 } from '@/lib/daily-payment-limit'
 import { notifyPohybyLive } from '@/lib/pohyby-live'
+import { syncWidgetFromTransactionsApi } from '@/lib/widget'
 
 type TransactionType = 'outgoing' | 'incoming' | 'deposit' | 'transfer'
 type TransactionFilter = 'all' | 'incoming' | 'outgoing' | 'deposit'
@@ -470,12 +471,22 @@ export default function GeorgePrototypePage() {
                 spaceBalance: accBalance ?? prev.spaceBalance,
                 transactions: rawTxns.map((t: Partial<Transaction>) => normalizeTransaction(t)),
               }))
+              void syncWidgetFromTransactionsApi({
+                transactions: rawTxns,
+                dailyLimit: data.dailyLimit,
+                accounts: data.accounts,
+              })
               setIsLoaded(true)
               return
             }
             // No txns yet, but seeded demo account balance (CI / ensure-db)
             if (accBalance !== undefined) {
               setState((prev) => ({ ...prev, spaceBalance: accBalance }))
+              void syncWidgetFromTransactionsApi({
+                transactions: [],
+                dailyLimit: data.dailyLimit,
+                accounts: data.accounts,
+              })
             }
           }
         }
@@ -655,6 +666,15 @@ export default function GeorgePrototypePage() {
       spaceBalance: newTxn.balanceAfter ?? balanceAfter,
       transactions: [newTxn, ...prev.transactions],
     }))
+
+    void syncWidgetFromTransactionsApi({
+      transactions: [newTxn, ...state.transactions],
+      accounts: [
+        {
+          balance: Math.round((newTxn.balanceAfter ?? balanceAfter) * 100),
+        },
+      ],
+    })
 
     // HTML confirmation after successful DB write
     void downloadPaymentConfirmationPdf({
