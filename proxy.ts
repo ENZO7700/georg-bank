@@ -18,6 +18,7 @@ function shouldSkipAuth(request: NextRequest) {
     pathname === '/gate' ||
     pathname.startsWith('/api/gate') ||
     pathname.startsWith('/api/transactions') ||
+    pathname.startsWith('/api/receipts') ||
     pathname.startsWith('/api/push') ||
     pathname.startsWith('/api/debug-ingest')
   )
@@ -53,6 +54,7 @@ export function proxy(request: NextRequest) {
       pathname === '/gate' ||
       pathname.startsWith('/api/gate') ||
       pathname.startsWith('/api/transactions') ||
+      pathname.startsWith('/api/receipts') ||
       pathname.startsWith('/api/push') ||
       pathname.startsWith('/api/debug-ingest') ||
       pathname.startsWith('/api/auth')

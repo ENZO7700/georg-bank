@@ -1,7 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { downloadPaymentConfirmationPdf } from '@/lib/payment-confirmation-pdf'
+import {
+  downloadPaymentConfirmationAsPdf,
+  downloadPaymentConfirmationHtml,
+  type PaymentConfirmationPdfData,
+} from '@/lib/payment-confirmation-pdf'
+import { PdfGenerateOverlay } from '@/components/pdf-generate-overlay'
 import { DashboardHeader } from '@/components/dashboard-header'
 import { useSession } from '@/lib/auth-client'
 import {
@@ -29,6 +34,7 @@ interface Transaction {
   balanceBefore?: number
   balanceAfter?: number
   category?: string
+  pdfUrl?: string | null
 }
 
 const SEED_TRANSACTIONS: Transaction[] = [
@@ -131,6 +137,7 @@ function normalizeTransaction(raw: Partial<Transaction> & { recipient?: string; 
     balanceBefore: raw.balanceBefore,
     balanceAfter: raw.balanceAfter,
     category: raw.category,
+    pdfUrl: raw.pdfUrl ?? null,
   }
 }
 
@@ -174,6 +181,8 @@ export default function GeorgePrototypePage() {
   const [slovenskoNumber, setSlovenskoNumber] = useState('0850 111 888')
   const [zahranicieNumber, setZahranicieNumber] = useState('+421 2 48 62 66')
   const [isLoaded, setIsLoaded] = useState(false)
+  const [pdfOverlayOpen, setPdfOverlayOpen] = useState(false)
+  const [pdfOverlayPhase, setPdfOverlayPhase] = useState<'preparing' | 'done'>('preparing')
 
   // GEORGE PRIHLASOVACIE STAVY
   const [isSimulatorLoggedIn, setIsSimulatorLoggedIn] = useState(false)
@@ -492,11 +501,16 @@ export default function GeorgePrototypePage() {
     }
   }, [])
 
-  // Načítanie stavu a transakcií zo Supabase DB a localStorage
+  // Načítanie stavu a transakcií cez /api/transactions (+ localStorage fallback)
   useEffect(() => {
+    const controller = new AbortController()
+
     const loadFromDb = async () => {
       try {
-        const res = await fetch('/api/transactions')
+        const res = await fetch('/api/transactions', {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
         if (res.ok) {
           const data = await res.json()
           if (data.success) {
@@ -531,8 +545,12 @@ export default function GeorgePrototypePage() {
           }
         }
       } catch (e) {
-        console.error('Chyba pri načítaní zo Supabase DB:', e)
+        if (controller.signal.aborted) return
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error('Chyba pri načítaní /api/transactions:', msg, e)
       }
+
+      if (controller.signal.aborted) return
 
       try {
         const saved = localStorage.getItem('george_pwa_state')
@@ -556,10 +574,12 @@ export default function GeorgePrototypePage() {
       } catch (e) {
         console.error('Chyba pri načítaní stavu z localStorage:', e)
       } finally {
-        setIsLoaded(true)
+        if (!controller.signal.aborted) setIsLoaded(true)
       }
     }
-    loadFromDb()
+    void loadFromDb()
+
+    return () => controller.abort()
 
     // Push / browser notifications disabled on dashboard2 (were spamming /api/push/send).
   }, [])
@@ -716,8 +736,12 @@ export default function GeorgePrototypePage() {
       ],
     })
 
-    // HTML confirmation after successful DB write
-    void downloadPaymentConfirmationPdf({
+    closePaymentSheet()
+    setTransactionFilter('all')
+    showToast(`Platba ${amount.toFixed(2)} € pre ${recipient} bola zapísaná.`)
+
+    // PDF confirmation after successful DB write (overlay + upload)
+    void generateAndDeliverReceipt({
       transactionId: txnId,
       createdAt: createdAtLabel,
       status: 'Štandardný platobný príkaz',
@@ -739,26 +763,70 @@ export default function GeorgePrototypePage() {
       balanceBefore: (newTxn.balanceBefore ?? balanceBefore).toFixed(2),
       balanceAfter: (newTxn.balanceAfter ?? balanceAfter).toFixed(2),
     })
-
-    closePaymentSheet()
-    setTransactionFilter('all')
-    showToast(`Platba ${amount.toFixed(2)} € pre ${recipient} bola zapísaná.`)
   }
 
-  const downloadTxnReceipt = (txn: Transaction) => {
-    const isOutgoing =
-      txn.type === 'outgoing' || txn.type === 'transfer' || txn.amount < 0
-    if (!isOutgoing) {
-      showToast('Doklad je dostupný len pre odchádzajúce platby.')
-      return
+  const uploadReceiptPdf = async (transactionId: string, blob: Blob) => {
+    try {
+      const form = new FormData()
+      form.append('transactionId', transactionId)
+      form.append('file', blob, `${transactionId}.pdf`)
+      const res = await fetch('/api/receipts/upload', { method: 'POST', body: form })
+      if (!res.ok) return
+      const json = (await res.json()) as { success?: boolean; pdfUrl?: string }
+      if (json.success && json.pdfUrl) {
+        setState((prev) => ({
+          ...prev,
+          transactions: prev.transactions.map((t) =>
+            t.id === transactionId ? { ...t, pdfUrl: json.pdfUrl } : t
+          ),
+        }))
+        setSelectedTransaction((prev) =>
+          prev?.id === transactionId ? { ...prev, pdfUrl: json.pdfUrl } : prev
+        )
+      }
+    } catch (err) {
+      console.warn('[dashboard2] receipt upload failed:', err)
     }
+  }
+
+  const generateAndDeliverReceipt = async (data: PaymentConfirmationPdfData) => {
+    setPdfOverlayPhase('preparing')
+    setPdfOverlayOpen(true)
+    let closedEarly = false
+    try {
+      const result = await downloadPaymentConfirmationAsPdf(data)
+      if (result.ok && result.blob) {
+        setPdfOverlayPhase('done')
+        void uploadReceiptPdf(data.transactionId, result.blob)
+        closedEarly = true
+        window.setTimeout(() => setPdfOverlayOpen(false), 600)
+        return
+      }
+      if (result.usedHtmlFallback) {
+        showToast('PDF sa nepodarilo vytvoriť — stiahnuté HTML.')
+      }
+    } catch {
+      try {
+        await downloadPaymentConfirmationHtml(data)
+        showToast('PDF sa nepodarilo vytvoriť — stiahnuté HTML.')
+      } catch {
+        showToast('Doklad sa nepodarilo stiahnuť.')
+      }
+    } finally {
+      if (!closedEarly) {
+        window.setTimeout(() => setPdfOverlayOpen(false), 400)
+      }
+    }
+  }
+
+  const buildTxnReceiptData = (txn: Transaction): PaymentConfirmationPdfData => {
     const abs = Math.abs(txn.amount)
     const parsed = parseMovementDescription(
       [txn.recipient, txn.note, txn.iban ? `IBAN: ${txn.iban}` : '', txn.vs ? `VS: ${txn.vs}` : '']
         .filter(Boolean)
         .join(' ')
     )
-    void downloadPaymentConfirmationPdf({
+    return {
       transactionId: txn.id,
       createdAt: txn.createdAt
         ? new Date(txn.createdAt).toLocaleString('sk-SK')
@@ -782,7 +850,22 @@ export default function GeorgePrototypePage() {
       emailConfirmation: false,
       balanceBefore: (txn.balanceBefore ?? state.spaceBalance + abs).toFixed(2),
       balanceAfter: (txn.balanceAfter ?? state.spaceBalance).toFixed(2),
-    })
+    }
+  }
+
+  const downloadTxnReceipt = (txn: Transaction) => {
+    const isOutgoing =
+      txn.type === 'outgoing' || txn.type === 'transfer' || txn.amount < 0
+    if (!isOutgoing) {
+      showToast('Doklad je dostupný len pre odchádzajúce platby.')
+      return
+    }
+    void generateAndDeliverReceipt(buildTxnReceiptData(txn))
+  }
+
+  const openStoredPdf = (txn: Transaction) => {
+    if (!txn.pdfUrl) return
+    window.open(txn.pdfUrl, '_blank', 'noopener,noreferrer')
   }
 
   const showToast = (message: string) => {
@@ -2131,6 +2214,91 @@ export default function GeorgePrototypePage() {
                   </div>
                 )}
               </section>
+
+              {/* DOKLADY SANDBOX — persistent PDF receipts */}
+              <section
+                id="receipts-sandbox"
+                data-testid="receipts-sandbox"
+                className="mt-4 mb-8 george-card rounded-2xl overflow-hidden border border-slate-800/40 shadow-lg shadow-black/20"
+              >
+                <div className="p-4 border-b border-slate-800/40">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Sandbox</p>
+                  <h2 className="text-base font-bold text-white mt-1">Doklady</h2>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Uložené PDF potvrdenia k odchádzajúcim platbám.
+                  </p>
+                </div>
+                {(() => {
+                  const receiptTxns = state.transactions.filter(
+                    (t) =>
+                      t.type === 'outgoing' ||
+                      t.type === 'transfer' ||
+                      t.amount < 0
+                  )
+                  if (receiptTxns.length === 0) {
+                    return (
+                      <div className="px-4 py-8 text-center">
+                        <p className="text-sm font-bold text-white">Zatiaľ žiadne uložené doklady</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Po odoslaní platby sa tu objavia.
+                        </p>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div className="divide-y divide-slate-800/40" data-testid="receipts-sandbox-list">
+                      {receiptTxns.slice(0, 20).map((txn) => {
+                        const meta = getTxnMeta(txn)
+                        return (
+                          <div
+                            key={`receipt-${txn.id}`}
+                            data-testid="receipt-sandbox-row"
+                            className="flex flex-col gap-2 px-4 py-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-white">{txn.recipient}</p>
+                                <p className="mt-0.5 text-[11px] text-slate-400">
+                                  {txn.date} · {meta.signedAmount}
+                                </p>
+                              </div>
+                              {txn.pdfUrl ? (
+                                <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-400">
+                                  PDF
+                                </span>
+                              ) : (
+                                <span className="shrink-0 rounded-full border border-slate-700 bg-[#1b1b26] px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-slate-500">
+                                  —
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              {txn.pdfUrl ? (
+                                <button
+                                  type="button"
+                                  data-testid="receipt-open-pdf"
+                                  onClick={() => openStoredPdf(txn)}
+                                  className="flex-1 min-h-10 rounded-xl bg-[#327bf5] text-white text-xs font-bold"
+                                >
+                                  Otvoriť PDF
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                data-testid="receipt-regenerate"
+                                onClick={() => downloadTxnReceipt(txn)}
+                                className="flex-1 min-h-10 rounded-xl border border-slate-700 bg-[#1b1b26] text-slate-200 text-xs font-bold"
+                              >
+                                {txn.pdfUrl ? 'Regenerovať' : 'Vygenerovať'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
+              </section>
             </main>
           </div>
 
@@ -2552,13 +2720,27 @@ export default function GeorgePrototypePage() {
                 selectedTransaction.type === 'transfer' ||
                 selectedTransaction.amount < 0) && (
                 <div className="border-t border-slate-800/40 p-4 flex flex-col gap-2">
+                  {selectedTransaction.pdfUrl ? (
+                    <button
+                      type="button"
+                      data-testid="txn-open-stored-pdf"
+                      onClick={() => openStoredPdf(selectedTransaction)}
+                      className="w-full min-h-11 rounded-xl bg-[#327bf5] hover:bg-blue-600 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-900/30"
+                    >
+                      Otvoriť uložené PDF
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     data-testid="txn-download-receipt"
                     onClick={() => downloadTxnReceipt(selectedTransaction)}
-                    className="w-full min-h-11 rounded-xl bg-[#327bf5] hover:bg-blue-600 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-900/30"
+                    className={`w-full min-h-11 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors ${
+                      selectedTransaction.pdfUrl
+                        ? 'border border-slate-700 bg-[#1b1b26] text-slate-200 hover:bg-slate-800'
+                        : 'bg-[#327bf5] hover:bg-blue-600 text-white shadow-lg shadow-blue-900/30'
+                    }`}
                   >
-                    Stiahnuť doklad
+                    {selectedTransaction.pdfUrl ? 'Regenerovať doklad' : 'Stiahnuť doklad'}
                   </button>
                 </div>
               )}
@@ -2710,6 +2892,8 @@ export default function GeorgePrototypePage() {
         </div>
 
         {/* TOAST NOTIFIKÁCIA */}
+        <PdfGenerateOverlay open={pdfOverlayOpen} phase={pdfOverlayPhase} />
+
         <div id="toast" className={`fixed top-[max(2.5rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 bg-blue-600 border border-blue-400 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-xl transition-all duration-300 text-center w-[85%] max-w-103 z-100 lg:absolute lg:top-10 ${isToastVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
           {toastMessage}
         </div>

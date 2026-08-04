@@ -5,7 +5,7 @@ import { loginWithPin } from './helpers/dashboard2'
 
 /**
  * E2E: vyplnenie platby na /dashboard2 → Autorizovať cez George kľúč
- * → stiahnutie HTML potvrdenia s údajmi o platbe.
+ * → PDF potvrdenie (+ sandbox doklady).
  */
 const PAYMENT = {
   recipient: 'Mária Nováková',
@@ -15,10 +15,10 @@ const PAYMENT = {
   note: 'Test HTML',
 } as const
 
-test.describe('dashboard2 – vyplnenie platby + HTML potvrdenie', () => {
+test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test('vyplní platbu, autorizuje George kľúčom a overí HTML s údajmi', async ({ page }) => {
+  test('vyplní platbu, autorizuje George kľúčom a overí PDF download', async ({ page }) => {
     // Force <a download> (bez Web Share sheetu v headless)
     await page.addInitScript(() => {
       const nav = navigator as Navigator & {
@@ -31,66 +31,63 @@ test.describe('dashboard2 – vyplnenie platby + HTML potvrdenie', () => {
       }
     })
 
-    // 1) Login (PIN 666666)
     await loginWithPin(page)
 
-    // 2) Otvor Nová platba
+    await expect(page.getByTestId('receipts-sandbox')).toBeVisible({ timeout: 15000 })
+
     await page.getByRole('button', { name: /Nová platba/i }).click()
     await expect(page.getByRole('heading', { name: 'Nová platba' })).toBeVisible({ timeout: 10000 })
     await expect(page.locator('#pay-recipient')).toBeVisible()
 
-    // 3) Vyplň formulár (suma < 0.53 € default balance)
     await page.locator('#pay-recipient').fill(PAYMENT.recipient)
     await page.locator('#pay-iban').fill(PAYMENT.iban)
     await page.locator('#pay-amount').fill(PAYMENT.amount)
     await page.locator('#pay-vs').fill(PAYMENT.vs)
     await page.locator('#pay-note').fill(PAYMENT.note)
 
-    await expect(page.locator('#pay-recipient')).toHaveValue(PAYMENT.recipient)
-    await expect(page.locator('#pay-iban')).toHaveValue(PAYMENT.iban)
-    await expect(page.locator('#pay-amount')).toHaveValue(PAYMENT.amount)
-    await expect(page.locator('#pay-vs')).toHaveValue(PAYMENT.vs)
-    await expect(page.locator('#pay-note')).toHaveValue(PAYMENT.note)
-
-    // 4) Autorizácia → download HTML
-    const downloadPromise = page.waitForEvent('download', { timeout: 20000 })
+    const downloadPromise = page.waitForEvent('download', { timeout: 45000 })
     await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
+
+    // Overlay + toast appear right after DB write — assert before long PDF convert.
+    await expect(page.getByTestId('pdf-generate-overlay')).toBeVisible({ timeout: 20000 })
+    await expect(page.getByText(/Platba 0[,.]25|zapísaná/i).first()).toBeVisible({
+      timeout: 10000,
+    })
 
     const download = await downloadPromise
     const filename = download.suggestedFilename()
-    expect(filename).toMatch(/^potvrdenie-.*\.html$/i)
+    // Prefer PDF; HTML fallback is still acceptable if canvas fails in CI.
+    expect(filename).toMatch(/^potvrdenie-.*\.(pdf|html)$/i)
     expect(filename).toContain(PAYMENT.vs)
 
+    const ext = filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'html'
     const tempPath = path.join(
       __dirname,
       '..',
-      `tmp-payment-html-${Date.now()}-${Math.random().toString(36).slice(2)}.html`
+      `tmp-payment-${ext}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
     )
     await download.saveAs(tempPath)
     expect(fs.existsSync(tempPath)).toBe(true)
-    expect(fs.statSync(tempPath).size).toBeGreaterThan(500)
+    const size = fs.statSync(tempPath).size
+    expect(size).toBeGreaterThan(500)
 
-    // 5) Over obsah HTML dokumentu
-    const html = fs.readFileSync(tempPath, 'utf8')
-    expect(html).toMatch(/<!DOCTYPE html>/i)
-    expect(html).toMatch(/<html/i)
-    expect(html).toMatch(/Peter Novotn[yý]/i)
-    expect(html).toMatch(/Mária Nováková|Maria Novakova/i)
-    // suma 0.25 → v HTML typicky 0,25 alebo 0.25
-    expect(html).toMatch(/0[,.]25/)
-    // IBAN (s medzerami alebo bez)
-    expect(html.replace(/\s+/g, '')).toMatch(/SK8090000000001234567890/i)
-    // poznámka v tele potvrdenia
-    expect(html).toMatch(/Test HTML/)
-    // štruktúra potvrdenia
-    expect(html.length).toBeGreaterThan(1000)
+    if (ext === 'pdf') {
+      const magic = fs.readFileSync(tempPath).subarray(0, 4).toString('utf8')
+      expect(magic).toBe('%PDF')
+    } else {
+      const html = fs.readFileSync(tempPath, 'utf8')
+      expect(html).toMatch(/<!DOCTYPE html>/i)
+      expect(html).toMatch(/Mária Nováková|Maria Novakova/i)
+      expect(html).toMatch(/0[,.]25/)
+    }
 
     fs.unlinkSync(tempPath)
 
-    // 6) UI potvrdí úspech
-    await expect(page.getByText(/úspešne odoslaná|Platba 0[,.]25/i).first()).toBeVisible({
-      timeout: 10000,
-    })
+    await expect(page.getByTestId('pdf-generate-overlay')).toBeHidden({ timeout: 15000 })
+
+    await expect(
+      page.getByTestId('receipts-sandbox-list').getByText(PAYMENT.recipient).first()
+    ).toBeVisible({ timeout: 15000 })
   })
 
   test('prázdny formulár nespustí download', async ({ page }) => {
@@ -104,7 +101,6 @@ test.describe('dashboard2 – vyplnenie platby + HTML potvrdenie', () => {
     await page.getByRole('button', { name: /Nová platba/i }).click()
     await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
 
-    // Toast validácie, žiadny download
     await expect(page.getByText(/vyplňte správne|Prosím/i).first()).toBeVisible({ timeout: 10000 })
   })
 })

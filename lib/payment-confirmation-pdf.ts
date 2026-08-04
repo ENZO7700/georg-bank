@@ -58,10 +58,13 @@ function getBicFromIban(ibanStr: string): string {
   return ''
 }
 
-export function getPaymentConfirmationFilename(data: PaymentConfirmationPdfData) {
+export function getPaymentConfirmationFilename(
+  data: PaymentConfirmationPdfData,
+  ext: 'html' | 'pdf' = 'html'
+) {
   const vs = (data.variableSymbol || 'bez-vs').replace(/[^\w-]+/g, '')
   const datePart = data.createdAt.split(' ')[0]?.replace(/\./g, '-') || 'datum'
-  return `potvrdenie-${vs}-${datePart}.html`
+  return `potvrdenie-${vs}-${datePart}.${ext}`
 }
 
 export function generatePaymentConfirmationHtml(data: PaymentConfirmationPdfData) {
@@ -506,24 +509,44 @@ export function generatePaymentConfirmationHtml(data: PaymentConfirmationPdfData
   return htmlContent
 }
 
-/**
- * Stiahne HTML potvrdenie o platbe.
- * Funguje v bežnom browseri aj v PWA (standalone):
- * 1) Web Share API so súborom (iOS/Android PWA – „Uložiť do Súborov“)
- * 2) klasický <a download> s Blob URL (desktop browser)
- * 3) fallback: otvorenie HTML v novej karte (ak download zablokuje PWA)
- */
-export async function downloadPaymentConfirmationPdf(data: PaymentConfirmationPdfData) {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return
-  }
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`))
+    }, ms)
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        window.clearTimeout(timer)
+        reject(err)
+      }
+    )
+  })
+}
 
-  const htmlContent = generatePaymentConfirmationHtml(data)
-  const filename = getPaymentConfirmationFilename(data)
-  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' })
-  const file = new File([blob], filename, { type: 'text/html;charset=utf-8' })
+/** Strip remote font CSS so headless/canvas capture does not hang on CDN. */
+function htmlForPdfCapture(html: string): string {
+  return html
+    .replace(/<link[^>]+fonts\.googleapis\.com[^>]*>/gi, '')
+    .replace(/<link[^>]+fonts\.gstatic\.com[^>]*>/gi, '')
+    .replace(
+      /font-family:\s*'Inter',\s*-apple-system/g,
+      "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    )
+}
 
-  // PWA / mobil: Share sheet → Uložiť do Files / Drive
+async function deliverBlobFile(
+  blob: Blob,
+  filename: string,
+  mime: string,
+  title = 'Potvrdenie o platbe'
+) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+
+  const file = new File([blob], filename, { type: mime })
   const nav = navigator as Navigator & {
     canShare?: (data?: ShareData) => boolean
     share?: (data?: ShareData) => Promise<void>
@@ -531,17 +554,11 @@ export async function downloadPaymentConfirmationPdf(data: PaymentConfirmationPd
   if (typeof nav.share === 'function' && typeof nav.canShare === 'function') {
     try {
       if (nav.canShare({ files: [file] })) {
-        await nav.share({
-          files: [file],
-          title: 'Potvrdenie o platbe',
-          text: filename,
-        })
+        await nav.share({ files: [file], title, text: filename })
         return
       }
     } catch (err) {
-      // User cancelled share – don't fall through to forced download
       if (err instanceof Error && err.name === 'AbortError') return
-      // Otherwise try classic download
     }
   }
 
@@ -555,15 +572,147 @@ export async function downloadPaymentConfirmationPdf(data: PaymentConfirmationPd
     document.body.appendChild(a)
     a.click()
     a.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 2_000)
   } catch {
-    // Posledný fallback – otvoriť HTML (používateľ môže Uložiť ako…)
     window.open(url, '_blank', 'noopener,noreferrer')
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    return
+  }
+}
+
+const PDF_CONVERT_TIMEOUT_MS = 12_000
+
+/** Render confirmation HTML into an offscreen A4 frame and convert to PDF blob. */
+export async function htmlToPdfBlob(html: string): Promise<Blob> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    throw new Error('htmlToPdfBlob requires a browser environment')
   }
 
-  // Revoke after browsers start the download
-  window.setTimeout(() => URL.revokeObjectURL(url), 2_000)
+  return withTimeout(htmlToPdfBlobInner(html), PDF_CONVERT_TIMEOUT_MS, 'htmlToPdfBlob')
+}
+
+async function htmlToPdfBlobInner(html: string): Promise<Blob> {
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ])
+
+  const host = document.createElement('div')
+  host.setAttribute('data-pdf-render-host', '1')
+  host.style.cssText =
+    'position:fixed;left:-10000px;top:0;width:210mm;height:297mm;overflow:hidden;pointer-events:none;opacity:1;z-index:-1;background:#fff;'
+  document.body.appendChild(host)
+
+  const iframe = document.createElement('iframe')
+  iframe.style.cssText = 'border:0;width:210mm;height:297mm;background:#fff;'
+  host.appendChild(iframe)
+
+  try {
+    const doc = iframe.contentDocument
+    if (!doc) throw new Error('PDF iframe document unavailable')
+
+    doc.open()
+    doc.write(htmlForPdfCapture(html))
+    doc.close()
+
+    await new Promise<void>((resolve) => {
+      if (iframe.contentWindow?.document.readyState === 'complete') {
+        resolve()
+        return
+      }
+      iframe.onload = () => resolve()
+      window.setTimeout(() => resolve(), 800)
+    })
+
+    const fonts = iframe.contentDocument?.fonts
+    if (fonts?.ready) {
+      try {
+        await withTimeout(Promise.resolve(fonts.ready), 1500, 'document.fonts.ready')
+      } catch {
+        /* ignore font wait failures / timeouts */
+      }
+    }
+    await new Promise((r) => window.setTimeout(r, 50))
+
+    const page =
+      (iframe.contentDocument?.querySelector('.a4-document') as HTMLElement | null) ||
+      (iframe.contentDocument?.body as HTMLElement | null)
+    if (!page) throw new Error('PDF source page not found')
+
+    // Disable screen scaling so capture uses full A4 layout size.
+    page.style.setProperty('--scale', '1')
+    page.style.transform = 'none'
+
+    const canvas = await withTimeout(
+      html2canvas(page, {
+        scale: 1.5,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        imageTimeout: 2000,
+        windowWidth: Math.max(page.scrollWidth, 794),
+        windowHeight: Math.max(page.scrollHeight, 1123),
+      }),
+      8_000,
+      'html2canvas'
+    )
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.88)
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight, undefined, 'FAST')
+    return pdf.output('blob')
+  } finally {
+    host.remove()
+  }
+}
+
+/**
+ * Stiahne HTML potvrdenie o platbe (fallback / legacy).
+ */
+export async function downloadPaymentConfirmationHtml(data: PaymentConfirmationPdfData) {
+  const htmlContent = generatePaymentConfirmationHtml(data)
+  const filename = getPaymentConfirmationFilename(data, 'html')
+  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' })
+  await deliverBlobFile(blob, filename, 'text/html;charset=utf-8')
+}
+
+/** Build PDF blob from confirmation data (no download). */
+export async function buildPaymentConfirmationPdfBlob(
+  data: PaymentConfirmationPdfData
+): Promise<{ blob: Blob; filename: string; html: string }> {
+  const html = generatePaymentConfirmationHtml(data)
+  const blob = await htmlToPdfBlob(html)
+  const filename = getPaymentConfirmationFilename(data, 'pdf')
+  return { blob, filename, html }
+}
+
+/**
+ * Convert HTML confirmation → PDF and deliver via share/download.
+ * On canvas/PDF failure, falls back to HTML download.
+ */
+export async function downloadPaymentConfirmationAsPdf(
+  data: PaymentConfirmationPdfData
+): Promise<{ ok: boolean; blob?: Blob; filename?: string; usedHtmlFallback?: boolean }> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return { ok: false }
+  }
+
+  try {
+    const { blob, filename } = await buildPaymentConfirmationPdfBlob(data)
+    await deliverBlobFile(blob, filename, 'application/pdf')
+    return { ok: true, blob, filename }
+  } catch (err) {
+    console.warn('[payment-confirmation] PDF convert failed, falling back to HTML:', err)
+    await downloadPaymentConfirmationHtml(data)
+    return { ok: false, usedHtmlFallback: true }
+  }
+}
+
+/** @deprecated Prefer downloadPaymentConfirmationAsPdf — kept for existing imports. */
+export async function downloadPaymentConfirmationPdf(data: PaymentConfirmationPdfData) {
+  await downloadPaymentConfirmationAsPdf(data)
 }
 
 export function openPaymentConfirmationHtml(data: PaymentConfirmationPdfData) {

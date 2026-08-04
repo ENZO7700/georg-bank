@@ -135,6 +135,7 @@ export type MovementRow = {
   note?: string | null
   balanceBefore?: number
   balanceAfter?: number
+  pdfUrl?: string | null
 }
 
 function mapTxn(t: {
@@ -146,6 +147,7 @@ function mapTxn(t: {
   status: string
   balanceBefore: number | null
   balanceAfter: number | null
+  pdfUrl?: string | null
 }): MovementRow {
   const euros = t.amount / 100
   const signed =
@@ -163,6 +165,7 @@ function mapTxn(t: {
     note: t.description,
     balanceBefore: t.balanceBefore != null ? t.balanceBefore / 100 : undefined,
     balanceAfter: t.balanceAfter != null ? t.balanceAfter / 100 : undefined,
+    pdfUrl: t.pdfUrl || null,
   }
 }
 
@@ -173,7 +176,7 @@ export async function listMovementsViaSupabase(limit = 100) {
   const { data, error } = await supabase
     .from('transaction')
     .select(
-      'id, description, amount, createdAt, type, status, balanceBefore, balanceAfter, userId'
+      'id, description, amount, createdAt, type, status, balanceBefore, balanceAfter, userId, pdfUrl'
     )
     .order('createdAt', { ascending: false })
     .limit(limit)

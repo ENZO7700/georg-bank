@@ -83,6 +83,7 @@ export async function GET() {
         note: t.description,
         balanceBefore: t.balanceBefore ? t.balanceBefore / 100 : undefined,
         balanceAfter: t.balanceAfter ? t.balanceAfter / 100 : undefined,
+        pdfUrl: t.pdfUrl || null,
       })),
       accounts,
       source: 'drizzle',

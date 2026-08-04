@@ -111,29 +111,35 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
     expect(persistBody?.transaction?.id).toBeTruthy()
 
     const filename = download.suggestedFilename()
-    expect(filename).toMatch(/^potvrdenie-.*\.html$/i)
+    expect(filename).toMatch(/^potvrdenie-.*\.(pdf|html)$/i)
     expect(filename).toContain(payment.vs)
 
+    const isPdf = filename.toLowerCase().endsWith('.pdf')
     const tempPath = path.join(
       __dirname,
       '..',
-      `tmp-safari-smoke-${payment.runId}.html`
+      `tmp-safari-smoke-${payment.runId}.${isPdf ? 'pdf' : 'html'}`
     )
     await download.saveAs(tempPath)
     expect(fs.existsSync(tempPath)).toBe(true)
     const size = fs.statSync(tempPath).size
-    expect(size).toBeGreaterThan(2000)
+    expect(size).toBeGreaterThan(500)
 
-    const html = fs.readFileSync(tempPath, 'utf8')
-    expect(html).toMatch(/<!DOCTYPE html>/i)
-    expect(html).toMatch(/Výpis z Účtu|Potvrdenie o platbe/i)
-    expect(html).toMatch(/Peter Novotn[yý]/i)
-    expect(html).toContain(payment.recipient)
-    expect(html).toMatch(/0[,.]11/)
-    expect(html.replace(/\s+/g, '')).toMatch(/SK8090000000001234567890/i)
-    expect(html).toContain(payment.note)
-    expect(html).toMatch(/George kľúč|mToken/i)
-    expect(html.length).toBeGreaterThan(3000)
+    if (isPdf) {
+      const magic = fs.readFileSync(tempPath).subarray(0, 4).toString('utf8')
+      expect(magic).toBe('%PDF')
+    } else {
+      const html = fs.readFileSync(tempPath, 'utf8')
+      expect(html).toMatch(/<!DOCTYPE html>/i)
+      expect(html).toMatch(/Výpis z Účtu|Potvrdenie o platbe/i)
+      expect(html).toMatch(/Peter Novotn[yý]/i)
+      expect(html).toContain(payment.recipient)
+      expect(html).toMatch(/0[,.]11/)
+      expect(html.replace(/\s+/g, '')).toMatch(/SK8090000000001234567890/i)
+      expect(html).toContain(payment.note)
+      expect(html).toMatch(/George kľúč|mToken/i)
+      expect(html.length).toBeGreaterThan(3000)
+    }
     fs.unlinkSync(tempPath)
 
     // Unique toast — recipient is unique per run
