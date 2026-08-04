@@ -1,11 +1,14 @@
 # Shared iPhone E2E
 
-Device-agnostic mobile suite run by Playwright projects:
+Device-agnostic mobile suite run by Playwright projects (`testMatch: /iphone\/.*\.spec\.ts/`):
 
-| Project | Preset | Viewport |
-|---------|--------|----------|
-| **iPhone 17 Pro** (primary) | `devices['iPhone 17 Pro']` | 402×681, 3× DPR, WebKit |
-| **iPhone Air** (second form factor) | `devices['iPhone Air']` | 420×719, 3× DPR, WebKit |
+| Project | Preset | Viewport | npm script |
+|---------|--------|----------|------------|
+| **iPhone 15** | `devices['iPhone 15']` | 393×659, 3× DPR | `test:iphone-15` |
+| **iPhone 15 Pro** | `devices['iPhone 15 Pro']` | 393×659, 3× DPR | `test:iphone-15-pro` |
+| **iPhone 17** | `devices['iPhone 17']` | 402×681, 3× DPR | `test:iphone-17` |
+| **iPhone 17 Pro** | `devices['iPhone 17 Pro']` | 402×681, 3× DPR | `test:iphone-17-pro` |
+| **iPhone Air** | `devices['iPhone Air']` (17 Air family) | 420×719, 3× DPR | `test:iphone-17-air` |
 
 Legacy **iPhone 14 Plus** lives in `e2e/iphone-14-plus/` and is excluded from `npm run test:iphone`.
 
@@ -23,10 +26,15 @@ Legacy **iPhone 14 Plus** lives in `e2e/iphone-14-plus/` and is excluded from `n
 ## Run
 
 ```bash
-# default modern devices: 17 Pro + Air
+# all modern devices: 15, 15 Pro, 17, 17 Pro, Air
 npm run test:iphone
+# alias:
+npm run test:iphone-all-modern
 
 # single project
+npm run test:iphone-15
+npm run test:iphone-15-pro
+npm run test:iphone-17
 npm run test:iphone-17-pro
 npm run test:iphone-17-air
 
