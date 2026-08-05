@@ -5,17 +5,17 @@ import {
 } from './helpers/app'
 
 test.describe('PDF / HTML export – aktuálny flow', () => {
-  test('Dashboard a payment-orders majú zjednotený header', async ({ page }) => {
-    await page.goto('/dashboard')
+  test('Dashboard2 a payment-orders majú zjednotený header', async ({ page }) => {
+    await page.goto('/dashboard2')
     await expectGeorgeHeader(page)
 
-    await page.goto('/dashboard/payment-orders')
+    await page.goto('/dashboard2/payment-orders')
     await expect(page).toHaveURL(/payment-orders/)
     await expectGeorgeHeader(page)
   })
 
   test('Menu → Nová platba otvorí transfer formulár', async ({ page }) => {
-    await page.goto('/dashboard')
+    await page.goto('/dashboard2')
     await openNewPaymentFromMenu(page)
     await expect(page.locator('input#recipient')).toBeVisible()
     await expect(page.locator('input#iban')).toBeVisible()
@@ -23,7 +23,7 @@ test.describe('PDF / HTML export – aktuálny flow', () => {
   })
 
   test('Transfer formulár má tlačidlo Podpísať platbu', async ({ page }) => {
-    await page.goto('/dashboard')
+    await page.goto('/dashboard2')
     await openNewPaymentFromMenu(page)
     await expect(page.getByRole('button', { name: /Podpísať platbu/i })).toBeVisible()
   })

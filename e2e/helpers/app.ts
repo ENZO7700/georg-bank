@@ -8,9 +8,8 @@ export const SWAPPED_CARD_ENDINGS = ['1234', '4321', '4444'] as const
 
 export const PROTECTED_DASHBOARD_ROUTES = [
   '/dashboard2',
-  '/dashboardpayment',
-  '/dashboard/payment-orders',
-  '/dashboard/assistant',
+  '/dashboard2/payment-orders',
+  '/dashboard2/assistant',
 ] as const
 
 /** Prejde site gate ak je aktívny (produkcia / lokálny dev s gate). */

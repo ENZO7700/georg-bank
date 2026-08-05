@@ -11,9 +11,9 @@ setup('authenticate', async ({ page }) => {
     fs.mkdirSync(authDir, { recursive: true })
   }
 
-  // Current app flow: site gate (if enabled) → guest auto-login → dashboard
-  await gotoApp(page, '/dashboard')
-  await page.waitForURL(/dashboard/, { timeout: 30000 })
+  // Current app flow: site gate (if enabled) → guest auto-login → dashboard2
+  await gotoApp(page, '/dashboard2')
+  await page.waitForURL(/dashboard2/, { timeout: 30000 })
   // dashboard2 lands on the George kľúč PIN screen first; session cookie is already set
   await expect(
     page.getByText(/Zadajte bezpečnostný PIN|Prehľad|SPACE účet/i).first()

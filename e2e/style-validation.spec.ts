@@ -40,7 +40,7 @@ function isGreenish(value: string) {
 
 test.describe('UI/UX Style and Color Validation', () => {
   test('TransferForm má tmavý George surface a kľúčové UI prvky', async ({ page }) => {
-    await page.goto('/dashboard')
+    await page.goto('/dashboard2')
     await openNewPaymentFromMenu(page)
 
     const header = page.locator('header:has-text("Nová platba")')

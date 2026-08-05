@@ -33,9 +33,9 @@ test.describe('Autentifikácia', () => {
     })
   })
 
-  test('Guest session sprístupní klasický /dashboard', async ({ page }) => {
+  test('Guest session sprístupní klasický /dashboard2', async ({ page }) => {
     await login(page)
-    await expect(page).toHaveURL(/dashboard/)
+    await expect(page).toHaveURL(/dashboard2/)
     await expect(page.getByText('SPACE účet').first()).toBeVisible({ timeout: 15000 })
   })
 })

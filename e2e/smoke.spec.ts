@@ -5,8 +5,8 @@ import { openNewPaymentFromMenu } from './helpers/app'
 
 test.describe('George Smoke Test – platba a HTML potvrdenie', () => {
   test('Kompletný platobný flow a stiahnutie HTML potvrdenia', async ({ page }) => {
-    await page.goto('/dashboard')
-    await expect(page).toHaveURL(/dashboard/)
+    await page.goto('/dashboard2')
+    await expect(page).toHaveURL(/dashboard2/)
 
     await openNewPaymentFromMenu(page)
 

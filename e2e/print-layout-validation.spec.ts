@@ -5,7 +5,7 @@ import { openNewPaymentFromMenu } from './helpers/app'
 
 test.describe('Print Layout Validation', () => {
   test('HTML payment confirmation má A4 rozmery v print móde', async ({ page }) => {
-    await page.goto('/dashboard')
+    await page.goto('/dashboard2')
     await openNewPaymentFromMenu(page)
 
     await page.locator('input#recipient').fill('Test Layout')

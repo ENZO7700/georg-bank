@@ -2,16 +2,16 @@ import { test, expect } from '@playwright/test'
 import { expectGeorgeHeader } from './helpers/app'
 
 test.describe('Dashboard Payment overview', () => {
-  test('stránka /dashboardpayment je dostupná so zjednoteným headerom', async ({ page }) => {
-    await page.goto('/dashboardpayment')
-    await expect(page).toHaveURL(/dashboardpayment/)
+  test('stránka /dashboard2 je dostupná so zjednoteným headerom', async ({ page }) => {
+    await page.goto('/dashboard2')
+    await expect(page).toHaveURL(/dashboard2/)
     await expectGeorgeHeader(page)
     await expect(page.getByText(/Platby –/)).toBeVisible({ timeout: 10000 })
     await expect(page.getByText(/transakcií/)).toBeVisible()
   })
 
   test('export tlačidlo volá API s month parametrom', async ({ page }) => {
-    await page.goto('/dashboardpayment')
+    await page.goto('/dashboard2')
     await page.waitForLoadState('networkidle')
 
     const exportBtn = page.getByRole('button', { name: /Exportovať výpis za/i })

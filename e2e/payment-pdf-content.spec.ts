@@ -5,8 +5,8 @@ import { openNewPaymentFromMenu } from './helpers/app'
 
 test.describe('Payment confirmation – HTML obsah a API', () => {
   test('Odoslanie platby s unikátnymi údajmi a verifikácia HTML + API', async ({ page }) => {
-    await page.goto('/dashboard')
-    await expect(page).toHaveURL(/dashboard/)
+    await page.goto('/dashboard2')
+    await expect(page).toHaveURL(/dashboard2/)
 
     await openNewPaymentFromMenu(page)
 
@@ -38,7 +38,7 @@ test.describe('Payment confirmation – HTML obsah a API', () => {
     expect(normalizedText).toContain('15,50')
 
     await page.locator('button:has-text("Hotovo")').first().click()
-    await page.goto('/dashboard')
+    await page.goto('/dashboard2')
     await page.waitForLoadState('networkidle')
 
     const txnButton = page.locator('button').filter({ hasText: uniqueNote }).first()
