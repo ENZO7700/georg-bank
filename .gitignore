@@ -10,3 +10,4 @@ test-results/
 **/.gradle/
 maestro-shots/
 docs/slsp.pdf
+playwright/.auth/
