@@ -17,15 +17,29 @@ function shouldSkipAuth(request: NextRequest) {
     pathname.startsWith('/api/auth') ||
     pathname === '/gate' ||
     pathname.startsWith('/api/gate') ||
-    pathname.startsWith('/api/transactions')
+    pathname.startsWith('/api/transactions') ||
+    pathname.startsWith('/api/receipts') ||
+    pathname.startsWith('/api/push') ||
+    pathname.startsWith('/api/debug-ingest')
   )
 }
 
 /**
  * Next.js 16+: file convention is `proxy` (formerly `middleware`).
  * Site gate + guest session redirects.
+ * Legacy /dashboard is redirected to /dashboard2 (active product surface).
  */
 export function proxy(request: NextRequest) {
+  const { pathname, search } = request.nextUrl
+
+  // Prefer dashboard2 — block opening the legacy /dashboard shell.
+  if (pathname === '/dashboard' || pathname === '/dashboard/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard2'
+    url.search = search
+    return NextResponse.redirect(url)
+  }
+
   if (isSiteGateEnabled()) {
     const hasGateCookie = request.cookies.get(SITE_GATE_COOKIE)?.value === SITE_GATE_TOKEN
     const isTS = isTailscaleRequest(request)
@@ -34,9 +48,17 @@ export function proxy(request: NextRequest) {
       return NextResponse.next()
     }
 
-    const { pathname, search } = request.nextUrl
-
-    if (pathname === '/gate' || pathname.startsWith('/api/gate')) {
+    // Gate UI + public APIs needed by the main app and live /pohyby ledger.
+    // Payments from george-*.vercel.app must reach Supabase so the dashboard can show them.
+    if (
+      pathname === '/gate' ||
+      pathname.startsWith('/api/gate') ||
+      pathname.startsWith('/api/transactions') ||
+      pathname.startsWith('/api/receipts') ||
+      pathname.startsWith('/api/push') ||
+      pathname.startsWith('/api/debug-ingest') ||
+      pathname.startsWith('/api/auth')
+    ) {
       return NextResponse.next()
     }
 
@@ -45,7 +67,12 @@ export function proxy(request: NextRequest) {
     gateUrl.search = ''
     const redirectTarget = `${pathname}${search}`
     if (redirectTarget !== '/') {
-      gateUrl.searchParams.set('from', redirectTarget)
+      // Normalize legacy landing to dashboard2 when bouncing via gate
+      const from =
+        redirectTarget === '/dashboard' || redirectTarget.startsWith('/dashboard?')
+          ? '/dashboard2'
+          : redirectTarget
+      gateUrl.searchParams.set('from', from)
     }
 
     return NextResponse.redirect(gateUrl)
@@ -55,11 +82,14 @@ export function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
-  const { pathname, search } = request.nextUrl
   const guestUrl = request.nextUrl.clone()
   guestUrl.pathname = '/api/auth/guest'
   guestUrl.search = ''
-  const target = pathname === '/' ? '/dashboard2' : `${pathname}${search}`
+  const rawTarget = pathname === '/' ? '/dashboard2' : `${pathname}${search}`
+  const target =
+    rawTarget === '/dashboard' || rawTarget.startsWith('/dashboard?')
+      ? '/dashboard2'
+      : rawTarget
   guestUrl.searchParams.set('from', target)
 
   return NextResponse.redirect(guestUrl)

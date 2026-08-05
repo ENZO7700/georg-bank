@@ -4,17 +4,29 @@ import { gotoApp } from './helpers/app'
 test.describe('PWA Funkcionalita - 20x Komplexné Testy', () => {
 
   // --- 1. SERVICE WORKER ---
-  test('1. Service Worker sa úspešne zaregistruje', async ({ page }) => {
-    await gotoApp(page, '/sign-in');
-    const swRegistration = await page.evaluate(() => {
-      return navigator.serviceWorker?.register('/service-worker.js')
-        .then(() => true)
-        .catch(e => {
-          console.error('SW Error:', e);
-          return false;
-        });
-    });
-    expect(swRegistration).toBe(true);
+  test('1. Service Worker sa úspešne zaregistruje a aktivuje', async ({ page }) => {
+    await gotoApp(page, '/sign-in')
+
+    // Prefer layout registration; fall back to explicit register for isolation
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(async () => {
+            if (!('serviceWorker' in navigator)) return false
+            try {
+              let regs = await navigator.serviceWorker.getRegistrations()
+              if (regs.length === 0) {
+                await navigator.serviceWorker.register('/service-worker.js')
+              }
+              const ready = await navigator.serviceWorker.ready
+              return ready.active?.state === 'activated'
+            } catch {
+              return false
+            }
+          }),
+        { timeout: 30000 }
+      )
+      .toBe(true)
   })
 
   // --- MANIFEST.JSON TESTY ---

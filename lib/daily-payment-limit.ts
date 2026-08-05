@@ -1,11 +1,15 @@
-/** Daily outgoing payment allowance for the demo payer (EUR). */
-export const DAILY_PAYMENT_LIMIT_EUR = 2000
+/** Rolling 24h outgoing payment allowance for the demo payer (EUR). */
+export const DAILY_PAYMENT_LIMIT_EUR = 6660
 export const DAILY_PAYMENT_LIMIT_CENTS = DAILY_PAYMENT_LIMIT_EUR * 100
 
+/** Start of the rolling 24-hour window (now − 24h). */
+export function startOfRolling24h(date = new Date()): Date {
+  return new Date(date.getTime() - 24 * 60 * 60 * 1000)
+}
+
+/** @deprecated Prefer startOfRolling24h — kept as alias for call sites. */
 export function startOfLocalDay(date = new Date()): Date {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
+  return startOfRolling24h(date)
 }
 
 export function isOutgoingPaymentType(type: string | null | undefined): boolean {

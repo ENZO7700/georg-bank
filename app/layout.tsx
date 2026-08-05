@@ -18,6 +18,8 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   themeColor: '#091b3f',
+  // Required for env(safe-area-inset-*) under notch / Dynamic Island (Capacitor WKWebView).
+  viewportFit: 'cover',
 }
 
 export const metadata: Metadata = {
@@ -71,14 +73,29 @@ export default async function RootLayout({
         <Script id="capacitor-fetch-redirect" strategy="beforeInteractive">
           {`
             if (typeof window !== 'undefined') {
-              // Ak bežíme v Capacitor prostredí, presmerujeme relatívne fetch na host server
+              // Capacitor live-reload (server.url) already serves from http(s) localhost/LAN.
+              // Only remap relative fetch for file:// / capacitor:// shells.
+              // Never force Android 10.0.2.2 on iOS — that caused TypeError: Load failed.
               if (window.Capacitor || navigator.userAgent.includes('Capacitor')) {
                 var originalFetch = window.fetch;
                 window.fetch = function (input, init) {
                   if (typeof input === 'string' && input.startsWith('/')) {
-                    input = 'http://10.0.2.2:3030' + input;
+                    var protocol = window.location.protocol || '';
+                    if (protocol !== 'http:' && protocol !== 'https:') {
+                      var platform =
+                        (window.Capacitor &&
+                          window.Capacitor.getPlatform &&
+                          window.Capacitor.getPlatform()) ||
+                        '';
+                      var isAndroid =
+                        platform === 'android' || /android/i.test(navigator.userAgent || '');
+                      var host = isAndroid
+                        ? 'http://10.0.2.2:3030'
+                        : 'http://localhost:3030';
+                      input = host + input;
+                    }
                   }
-                  return originalFetch(input, init);
+                  return originalFetch.call(this, input, init);
                 };
               }
             }
@@ -89,28 +106,47 @@ export default async function RootLayout({
         <TranslationProvider dictionary={dictionary} locale={locale}>
           {children}
         </TranslationProvider>
-        <Script id="pwa-service-worker" strategy="lazyOnload">
+        <Script id="pwa-service-worker" strategy="afterInteractive">
           {`
-            if ('serviceWorker' in navigator) {
-              window.addEventListener('load', async () => {
-                try {
-                  const reg = await navigator.serviceWorker.register('/service-worker.js');
-                  console.log('[PWA] Service Worker registered, scope:', reg.scope);
-                  reg.addEventListener('updatefound', () => {
-                    const newWorker = reg.installing;
-                    if (newWorker) {
-                      newWorker.addEventListener('statechange', () => {
+            (function registerGeorgeServiceWorker() {
+              if (!('serviceWorker' in navigator)) return;
+              // Secure contexts only (HTTPS or localhost / 127.0.0.1)
+              var host = location.hostname;
+              var isLocal =
+                host === 'localhost' ||
+                host === '127.0.0.1' ||
+                host === '[::1]' ||
+                host.endsWith('.localhost');
+              if (location.protocol !== 'https:' && !isLocal) return;
+
+              var register = function () {
+                navigator.serviceWorker
+                  .register('/service-worker.js')
+                  .then(function (reg) {
+                    console.log('[PWA] Service Worker registered, scope:', reg.scope);
+                    reg.addEventListener('updatefound', function () {
+                      var newWorker = reg.installing;
+                      if (!newWorker) return;
+                      newWorker.addEventListener('statechange', function () {
                         if (newWorker.state === 'activated') {
                           console.log('[PWA] New Service Worker activated');
                         }
                       });
-                    }
+                    });
+                  })
+                  .catch(function (err) {
+                    console.error('[PWA] Service Worker registration failed:', err);
                   });
-                } catch (err) {
-                  console.error('[PWA] Service Worker registration failed:', err);
-                }
-              });
-            }
+              };
+
+              // Register immediately when ready — do not wait for window "load"
+              // (lazyOnload + load already-fired previously skipped registration).
+              if (document.readyState === 'complete') {
+                register();
+              } else {
+                window.addEventListener('load', register, { once: true });
+              }
+            })();
           `}
         </Script>
       </body>

@@ -1,19 +1,25 @@
 import { expect, type Page } from '@playwright/test'
 import { gotoApp } from './app'
 
+type Dashboard2Options = {
+  /** Absolute origin (e.g. https://george-….vercel.app) or omit for baseURL. */
+  origin?: string
+}
+
 /**
  * Open dashboard2. App lands on the PIN/George kľúč screen first
  * (isPasscodeScreen defaults to true). Site gate + guest handled by gotoApp.
  */
-export async function openDashboard2Welcome(page: Page) {
-  await gotoApp(page, '/dashboard2')
+export async function openDashboard2Welcome(page: Page, options?: Dashboard2Options) {
+  const path = options?.origin ? `${options.origin.replace(/\/$/, '')}/dashboard2` : '/dashboard2'
+  await gotoApp(page, path)
   await expect(page.getByText(/Zadajte bezpečnostný PIN/i)).toBeVisible({
     timeout: 20000,
   })
 }
 
-export async function openPinScreen(page: Page) {
-  await openDashboard2Welcome(page)
+export async function openPinScreen(page: Page, options?: Dashboard2Options) {
+  await openDashboard2Welcome(page, options)
   await expect(page.getByRole('button', { name: '1', exact: true })).toBeVisible({ timeout: 10000 })
   // Face ID overlay must NOT auto-open
   await expect(page.locator('.face-id-backdrop')).toHaveCount(0)
@@ -26,8 +32,8 @@ export async function enterPin(page: Page, pin: string) {
 }
 
 /** PIN login into Prehľad (no welcome CTA click — PIN is the entry screen). */
-export async function loginWithPin(page: Page, pin = '666666') {
-  await openPinScreen(page)
+export async function loginWithPin(page: Page, pin = '666666', options?: Dashboard2Options) {
+  await openPinScreen(page, options)
   await enterPin(page, pin)
   await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible({
     timeout: 15000,

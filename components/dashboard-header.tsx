@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import { Menu, Power } from 'lucide-react'
@@ -27,11 +27,47 @@ export function DashboardHeader({ account }: DashboardHeaderProps) {
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const t = useTranslation()
+  const headerRef = useRef<HTMLElement>(null)
 
   const accountLabel = account?.displayName ?? 'SPACE účet'
-  const balanceLabel = account?.balance !== undefined
-    ? `€ ${formatBalance(account.balance)}`
-    : null
+  const balanceLabel =
+    account?.balance !== undefined ? `€ ${formatBalance(account.balance)}` : null
+
+  useEffect(() => {
+    // #region agent log
+    const el = headerRef.current
+    const cs = el ? getComputedStyle(el) : null
+    const probe = document.createElement('div')
+    probe.style.cssText =
+      'position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)'
+    document.body.appendChild(probe)
+    const sat = getComputedStyle(probe).paddingTop
+    const sab = getComputedStyle(probe).paddingBottom
+    document.body.removeChild(probe)
+    const meta = document.querySelector('meta[name="viewport"]')?.getAttribute('content') ?? ''
+    const rect = el?.getBoundingClientRect()
+    fetch('/api/debug-ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId: 'safe-area-header',
+        hypothesisId: 'H1-H3',
+        location: 'components/dashboard-header.tsx:useEffect',
+        message: 'header safe-area metrics',
+        data: {
+          safeAreaInsetTop: sat,
+          safeAreaInsetBottom: sab,
+          headerTop: rect?.top ?? null,
+          headerHeight: rect?.height ?? null,
+          paddingTop: cs?.paddingTop ?? null,
+          viewportMeta: meta,
+          menuBtnTop: el?.querySelector('button')?.getBoundingClientRect().top ?? null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
+  }, [])
 
   const handleLogout = async () => {
     await authClient.signOut()
@@ -42,7 +78,7 @@ export function DashboardHeader({ account }: DashboardHeaderProps) {
   const handleItemClick = (item: string) => {
     setIsOpen(false)
     if (item === 'history') {
-      router.push('/dashboard')
+      router.push('/dashboard2')
     } else if (item === 'new-payment') {
       window.dispatchEvent(new CustomEvent('open-transfer-modal'))
     } else if (item === 'payment-orders') {
@@ -59,10 +95,8 @@ export function DashboardHeader({ account }: DashboardHeaderProps) {
   }
 
   const urlB64ToUint8Array = (base64String: string) => {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4)
-    const base64 = (base64String + padding)
-      .replace(/\-/g, '+')
-      .replace(/_/g, '/')
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/')
     const rawData = window.atob(base64)
     const outputArray = new Uint8Array(rawData.length)
     for (let i = 0; i < rawData.length; ++i) {
@@ -76,35 +110,46 @@ export function DashboardHeader({ account }: DashboardHeaderProps) {
       return alert('Tento prehliadač nepodporuje notifikácie.')
     }
 
-    const permission = await Notification.requestPermission()
-    if (permission === 'granted') {
-      try {
-        const registration = await navigator.serviceWorker.ready
-
-        const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-        if (!vapidPublicKey) {
-          console.error('VAPID public key not found in env')
-          return
-        }
-
-        const applicationServerKey = urlB64ToUint8Array(vapidPublicKey)
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey
-        })
-
-        const res = await fetch('/api/webhooks/push/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(subscription)
-        })
-
-        if (!res.ok) {
-          console.error('Failed to save push subscription on server')
-        }
-      } catch (err) {
-        console.error('Error subscribing to push:', err)
+    try {
+      // iOS WKWebView throws NotAllowedError without a trusted gesture / when denied.
+      const permission =
+        Notification.permission === 'default'
+          ? await Notification.requestPermission()
+          : Notification.permission
+      if (permission !== 'granted') {
+        alert('Notifikácie nie sú povolené.')
+        return
       }
+
+      const registration = await navigator.serviceWorker.ready
+      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+      if (!vapidPublicKey) {
+        console.warn('VAPID public key not found in env')
+        return
+      }
+
+      const applicationServerKey = urlB64ToUint8Array(vapidPublicKey)
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey,
+      })
+
+      const res = await fetch('/api/webhooks/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription),
+      })
+
+      if (!res.ok) {
+        console.warn('Failed to save push subscription on server')
+      }
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : ''
+      if (name === 'NotAllowedError') {
+        alert('Notifikácie nie sú povolené na tomto zariadení.')
+        return
+      }
+      console.warn('Error subscribing to push:', err)
     }
   }
 
@@ -125,11 +170,14 @@ export function DashboardHeader({ account }: DashboardHeaderProps) {
 
   return (
     <>
-      <header className="bg-[#0a0a10]/95 backdrop-blur-md text-white px-6 py-4 sticky top-0 z-50 border-b border-slate-900/40 select-none flex items-center justify-between">
+      <header
+        ref={headerRef}
+        className="bg-[#0a0a10]/95 backdrop-blur-md text-white px-6 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sticky top-0 z-50 border-b border-slate-900/40 select-none flex items-center justify-between"
+      >
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center gap-2 text-[#327bf5] hover:text-blue-400 focus:outline-none rounded-md hover:opacity-95 active:scale-95 transition-all duration-200"
+          className="flex items-center gap-2 text-[#327bf5] hover:text-blue-400 focus:outline-none rounded-md hover:opacity-95 active:scale-95 transition-all duration-200 min-h-11"
         >
           <Menu className="w-[22px] h-[22px]" />
           <span className="text-sm font-bold tracking-tight text-white">Menu</span>
@@ -137,7 +185,7 @@ export function DashboardHeader({ account }: DashboardHeaderProps) {
 
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 text-[#327bf5] hover:text-blue-400 focus:outline-none rounded-md hover:opacity-95 active:scale-95 transition-all duration-200"
+          className="flex items-center gap-2 text-[#327bf5] hover:text-blue-400 focus:outline-none rounded-md hover:opacity-95 active:scale-95 transition-all duration-200 min-h-11"
         >
           <span className="text-sm font-bold tracking-tight text-white">{t.dashboard.nav.logout}</span>
           <Power className="w-[18px] h-[18px]" />
@@ -146,7 +194,7 @@ export function DashboardHeader({ account }: DashboardHeaderProps) {
 
       {isOpen && (
         <div
-          className="fixed inset-0 top-[60px] bg-black/60 z-40 animate-fade-in flex flex-col justify-start"
+          className="fixed inset-x-0 bottom-0 top-[calc(3.25rem+env(safe-area-inset-top))] bg-black/60 z-40 animate-fade-in flex flex-col justify-start"
           onClick={() => setIsOpen(false)}
         >
           <div

@@ -77,6 +77,17 @@ async function ensureSchema(pool: Pool) {
 }
 
 async function ensureGuestUser(pool: Pool) {
+  const { isDedicatedGuestEmail, syncGuestCredentialPassword } = await import(
+    '../lib/guest-auth'
+  )
+  if (!isDedicatedGuestEmail(GUEST_USER_EMAIL)) {
+    console.error(
+      '[ensure-db] Skipping guest ensure: GUEST_USER_EMAIL must end with @local.test, got:',
+      GUEST_USER_EMAIL
+    )
+    return
+  }
+
   const existing = await pool.query(
     'SELECT 1 FROM "user" WHERE email = $1 LIMIT 1',
     [GUEST_USER_EMAIL]
@@ -87,7 +98,6 @@ async function ensureGuestUser(pool: Pool) {
       `UPDATE "user" SET name = $1, "updatedAt" = NOW() WHERE email = $2 AND name IS DISTINCT FROM $1`,
       [GUEST_USER_NAME, GUEST_USER_EMAIL]
     )
-    const { syncGuestCredentialPassword } = await import('../lib/guest-auth')
     const synced = await syncGuestCredentialPassword().catch(() => false)
     console.log(
       synced
@@ -185,7 +195,7 @@ async function ensureDemoAccountBalance(pool: Pool) {
     return
   }
 
-  const SEED_CENTS = 10_000 // €100
+  const SEED_CENTS = 666_000 // €6660 — matches 24h payment limit
   const defaultUserId = DEMO_DEFAULT_USER_ID
 
   await pool.query(

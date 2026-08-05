@@ -301,4 +301,58 @@ html, body {
   animation: pulse-glow 7s infinite ease-in-out;
 }
 
+/*
+ * dashboard2: full-bleed native shell on phones / PWA / Capacitor.
+ * Desktop (≥lg) keeps optional phone-preview frame + outer Menu chrome.
+ */
+@media (display-mode: standalone),
+  (display-mode: minimal-ui),
+  (display-mode: fullscreen) {
+  .d2-desktop-chrome {
+    display: none !important;
+  }
+  .d2-phone-center {
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
+  .d2-phone-shell {
+    max-width: none !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    --tw-ring-shadow: 0 0 #0000 !important;
+    --tw-ring-offset-shadow: 0 0 #0000 !important;
+  }
+  .d2-phone-shell .d2-tab-nav {
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
+}
+
+html.d2-standalone .d2-desktop-chrome {
+  display: none !important;
+}
+html.d2-standalone .d2-phone-center {
+  padding: 0 !important;
+  align-items: stretch !important;
+}
+html.d2-standalone .d2-phone-shell {
+  max-width: none !important;
+  width: 100% !important;
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  max-height: 100dvh !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+}
+html.d2-standalone .d2-phone-shell .d2-tab-nav {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
 

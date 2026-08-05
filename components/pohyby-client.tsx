@@ -2,12 +2,21 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { DAILY_PAYMENT_LIMIT_EUR } from '@/lib/daily-payment-limit'
+import { subscribePohybyLive } from '@/lib/pohyby-live'
+import { syncWidgetFromTransactionsApi } from '@/lib/widget'
 import { ArrowDownLeft, ArrowUpRight, RefreshCw } from 'lucide-react'
 
 type DailyLimit = {
   limitEur: number
   usedEur: number
   remainingEur: number
+}
+
+type TopupPolicy = {
+  manualTopupDisabled?: boolean
+  autoRefillEveryHours?: number
+  autoRefillAllowedInMs?: number
+  message?: string
 }
 
 type Movement = {
@@ -52,6 +61,7 @@ export function PohybyClient() {
     usedEur: 0,
     remainingEur: DAILY_PAYMENT_LIMIT_EUR,
   })
+  const [topupPolicy, setTopupPolicy] = useState<TopupPolicy | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
@@ -67,8 +77,14 @@ export function PohybyClient() {
       }
       setMovements(data.transactions ?? [])
       if (data.dailyLimit) setDailyLimit(data.dailyLimit)
+      if (data.topupPolicy) setTopupPolicy(data.topupPolicy)
       setUpdatedAt(new Date())
       setError('')
+      void syncWidgetFromTransactionsApi({
+        transactions: data.transactions ?? [],
+        dailyLimit: data.dailyLimit,
+        accounts: data.accounts,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chyba načítania')
     } finally {
@@ -79,8 +95,21 @@ export function PohybyClient() {
 
   useEffect(() => {
     void load()
-    const id = window.setInterval(() => void load(true), 4000)
-    return () => window.clearInterval(id)
+    // Fast poll so every outgoing payment shows within ~1.5s even without BroadcastChannel.
+    const id = window.setInterval(() => void load(true), 1500)
+    const unsub = subscribePohybyLive(() => {
+      void load(true)
+    })
+    const onFocus = () => void load(true)
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void load(true)
+    })
+    return () => {
+      window.clearInterval(id)
+      unsub()
+      window.removeEventListener('focus', onFocus)
+    }
   }, [load])
 
   const usedPct = Math.min(
@@ -115,16 +144,16 @@ export function PohybyClient() {
         >
           <div className="flex items-end justify-between gap-3">
             <div>
-              <p className="text-sm text-slate-300">Denný limit platieb</p>
+              <p className="text-sm text-slate-300">Limit platieb (24 h) — nie zostatok účtu</p>
               <p className="mt-1 text-3xl font-semibold tabular-nums">
                 {formatEur(dailyLimit.remainingEur)}
               </p>
               <p className="mt-1 text-sm text-slate-400">
-                zostáva z {formatEur(dailyLimit.limitEur)}
+                zostáva z limitu {formatEur(dailyLimit.limitEur)}
               </p>
             </div>
             <div className="text-right text-sm text-slate-300">
-              <p>Dnes použité</p>
+              <p>Za 24 h použité</p>
               <p className="mt-1 text-lg font-medium tabular-nums text-amber-200">
                 {formatEur(dailyLimit.usedEur)}
               </p>
@@ -141,6 +170,16 @@ export function PohybyClient() {
               Aktualizované {updatedAt.toLocaleTimeString('sk-SK')}
             </p>
           )}
+          <div
+            className="mt-4 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-100/95"
+            data-testid="pohyby-topup-policy"
+          >
+            <p className="font-semibold text-amber-200">Pravidlo dobíjania</p>
+            <p className="mt-1 leading-relaxed">
+              {topupPolicy?.message ||
+                'Manuálne dobíjanie € je zakázané. Automatické obnovenie zostatku je možné až po 24 hodinách (max 1×).'}
+            </p>
+          </div>
         </section>
 
         <section className="rounded-2xl border border-white/10 bg-[#101a2c]">
@@ -207,7 +246,7 @@ export function PohybyClient() {
         </section>
 
         <p className="pb-8 text-center text-xs text-slate-500">
-          Auto-obnova každé 4 s · dáta z databázy
+          Live · auto-obnova 1,5 s · každá odchádzajúca platba sa zapisuje hneď do DB
         </p>
       </main>
     </div>

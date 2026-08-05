@@ -33,11 +33,14 @@ const data: PaymentConfirmationPdfData = {
 }
 
 const html = generatePaymentConfirmationHtml(data)
-const filename = getPaymentConfirmationFilename(data)
+const filenameHtml = getPaymentConfirmationFilename(data, 'html')
+const filenamePdf = getPaymentConfirmationFilename(data, 'pdf')
 
-assert.match(filename, /\.html$/i, 'filename ends with .html')
-assert.match(filename, /potvrdenie/i, 'filename is potvrdenie-*')
-assert.ok(filename.includes('20260717'), 'filename contains VS')
+assert.match(filenameHtml, /\.html$/i, 'filename ends with .html')
+assert.match(filenamePdf, /\.pdf$/i, 'pdf filename ends with .pdf')
+assert.match(filenameHtml, /potvrdenie/i, 'filename is potvrdenie-*')
+assert.ok(filenameHtml.includes('20260717'), 'filename contains VS')
+assert.ok(filenamePdf.includes('20260717'), 'pdf filename contains VS')
 
 assert.ok(html.includes('<!DOCTYPE html>'), 'full HTML document')
 assert.ok(html.includes('Mária Nováková'), 'recipient name')
@@ -48,5 +51,6 @@ assert.ok(html.replace(/\s+/g, '').includes('SK8090000000001234567890'), 'recipi
 assert.ok(html.length > 1000, 'HTML is substantial')
 
 console.log('payment-html unit tests passed')
-console.log('  file:', filename)
+console.log('  file html:', filenameHtml)
+console.log('  file pdf:', filenamePdf)
 console.log('  html bytes:', html.length)

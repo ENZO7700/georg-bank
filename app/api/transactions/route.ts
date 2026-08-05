@@ -8,6 +8,7 @@ import {
   DEMO_DEFAULT_USER_NAME,
 } from '@/lib/demo-user'
 import {
+  DAILY_PAYMENT_LIMIT_EUR,
   dailyLimitSnapshot,
   isOutgoingPaymentType,
   startOfLocalDay,
@@ -17,6 +18,10 @@ import {
   createServiceSupabase,
   listMovementsViaSupabase,
 } from '@/lib/demo-transactions-supabase'
+import {
+  MANUAL_TOPUP_BLOCKED_MESSAGE,
+  isManualTopupType,
+} from '@/lib/topup-rules'
 import { desc, eq, inArray } from 'drizzle-orm'
 
 async function getTodayOutgoingUsedCents(userId: string) {
@@ -40,7 +45,8 @@ export async function GET() {
             success: true,
             dailyLimit: remote.dailyLimit,
             transactions: remote.transactions,
-            accounts: [],
+            accounts: remote.accounts ?? [],
+            topupPolicy: remote.topupPolicy,
             source: 'supabase',
           })
         }
@@ -77,6 +83,7 @@ export async function GET() {
         note: t.description,
         balanceBefore: t.balanceBefore ? t.balanceBefore / 100 : undefined,
         balanceAfter: t.balanceAfter ? t.balanceAfter / 100 : undefined,
+        pdfUrl: t.pdfUrl || null,
       })),
       accounts,
       source: 'drizzle',
@@ -94,6 +101,20 @@ export async function POST(req: Request) {
 
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: 'Zadajte platnú sumu' }, { status: 400 })
+    }
+
+    if (isManualTopupType(type)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: MANUAL_TOPUP_BLOCKED_MESSAGE,
+          topupPolicy: {
+            manualTopupDisabled: true,
+            autoRefillEveryHours: 24,
+          },
+        },
+        { status: 403 }
+      )
     }
 
     if (createServiceSupabase()) {
@@ -270,7 +291,7 @@ export async function POST(req: Request) {
         return NextResponse.json(
           {
             success: false,
-            error: `Denný limit 2000 € je vyčerpaný. Zostáva ${dailyLimit.remainingEur.toFixed(2)} €.`,
+            error: `Denný limit ${DAILY_PAYMENT_LIMIT_EUR} € je vyčerpaný. Zostáva ${dailyLimit.remainingEur.toFixed(2)} €.`,
             dailyLimit,
           },
           { status: 403 }

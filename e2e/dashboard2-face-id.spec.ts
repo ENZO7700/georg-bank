@@ -34,27 +34,39 @@ test.describe('dashboard2 – Face ID + PIN (agent delivery)', () => {
   test('lands on PIN; Späť shows welcome hero, login CTA and product cards', async ({ page }) => {
     await openDashboard2Welcome(page)
 
-    // PIN-first entry (no welcome CTA needed)
+    // PIN-first entry (isPasscodeScreen defaults to true — no welcome CTA click needed)
     await expect(page.getByTestId('pin-screen')).toBeVisible()
     await expect(page.getByText(/Zadajte bezpečnostný PIN/i)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Prihlásiť sa tvárou' })).toBeVisible()
     await expect(page.getByRole('button', { name: '1', exact: true })).toBeVisible()
 
-    // Späť → welcome screen still available
+    // Späť (aria-label) → welcome screen is still reachable under PIN
     await page.getByRole('button', { name: 'Späť' }).click()
-    await expect(page.getByRole('heading', { name: /Ahoj, som George/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Prihlásiť sa/i })).toBeVisible()
-    await expect(page.getByText('Chcem sa stať klientom')).toBeVisible()
-    await expect(page.getByText('Osobný účet')).toBeVisible()
-    await expect(page.getByText('Podnikateľský účet')).toBeVisible()
-    await expect(page.getByText('Investovanie')).toBeVisible()
-    await expect(page.getByText('Zabudnuté prihlasovacie údaje')).toBeVisible()
+    await expect(page.getByTestId('pin-screen')).toHaveCount(0)
+
+    const welcome = page.locator('.welcome-screen')
+    await expect(welcome.getByRole('heading', { name: /Ahoj, som George/i })).toBeVisible()
+    await expect(welcome.getByRole('button', { name: /^Prihlásiť sa/i })).toBeVisible()
+    await expect(welcome.getByText('Zabudnuté prihlasovacie údaje')).toBeVisible()
+
+    // Product cards sit below the fold in the phone frame — scroll before assert
+    const products = welcome.locator('.welcome-products')
+    await products.scrollIntoViewIfNeeded()
+    await expect(products.getByText('Chcem sa stať klientom')).toBeVisible()
+    await expect(products.getByText('Osobný účet')).toBeVisible()
+    await expect(products.getByText('Podnikateľský účet')).toBeVisible()
+    await expect(products.getByText('Investovanie')).toBeVisible()
+
+    // Welcome CTA returns to PIN without auto-starting Face ID
+    await welcome.getByRole('button', { name: /^Prihlásiť sa/i }).click()
+    await expect(page.getByTestId('pin-screen')).toBeVisible()
+    await expect(page.locator('.face-id-backdrop')).toHaveCount(0)
 
     // No fake iOS status bar (time / 5G) in app chrome
     await expect(page.getByText('5G')).toHaveCount(0)
   })
 
-  test('Prihlásiť sa opens PIN only – does not auto-start Face ID', async ({ page }) => {
+  test('PIN screen does not auto-start Face ID', async ({ page }) => {
     await openPinScreen(page)
 
     await expect(page.getByText(/George kľúč|bezpečnostný PIN|Zadajte/i).first()).toBeVisible()

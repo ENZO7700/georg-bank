@@ -38,8 +38,14 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
         ? await authClient.signUp.email({ email: authEmail, password: authPassword, name: name || 'Peter' })
         : await authClient.signIn.email({ email: authEmail, password: authPassword })
 
-      // Auto-signup the dev user if sign-in fails on a fresh local database
-      if (result.error && !isSignUp) {
+      // Local/dev only: auto-create the account on a fresh DB.
+      // Never do this in production — it masks "wrong password" and can
+      // create accounts that guest sync later overwrites.
+      if (
+        result.error &&
+        !isSignUp &&
+        process.env.NODE_ENV === 'development'
+      ) {
         const signUpResult = await authClient.signUp.email({
           email: authEmail,
           password: authPassword,

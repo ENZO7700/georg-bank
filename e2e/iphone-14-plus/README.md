@@ -22,9 +22,11 @@ npm run test:iphone-14-plus
 # only implemented suites
 npx playwright test --project="iPhone 14 Plus" e2e/iphone-14-plus/auth.spec.ts e2e/iphone-14-plus/dashboard.spec.ts
 
-# both iPhone devices
+# modern default (17 Pro + Air) — does NOT include 14 Plus
 npm run test:iphone
 ```
+
+Legacy only: this folder is excluded from `npm run test:iphone`. Prefer shared suite in [`../iphone/`](../iphone/).
 
 ## Regenerate remaining scaffolds
 

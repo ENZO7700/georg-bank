@@ -1,7 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { downloadPaymentConfirmationPdf } from '@/lib/payment-confirmation-pdf'
+import {
+  downloadPaymentConfirmationAsPdf,
+  downloadPaymentConfirmationHtml,
+  type PaymentConfirmationPdfData,
+} from '@/lib/payment-confirmation-pdf'
+import { PdfGenerateOverlay } from '@/components/pdf-generate-overlay'
 import { DashboardHeader } from '@/components/dashboard-header'
 import { useSession } from '@/lib/auth-client'
 import {
@@ -9,6 +14,8 @@ import {
   isOutgoingPaymentType,
   startOfLocalDay,
 } from '@/lib/daily-payment-limit'
+import { notifyPohybyLive } from '@/lib/pohyby-live'
+import { syncWidgetFromTransactionsApi } from '@/lib/widget'
 
 type TransactionType = 'outgoing' | 'incoming' | 'deposit' | 'transfer'
 type TransactionFilter = 'all' | 'incoming' | 'outgoing' | 'deposit'
@@ -27,6 +34,7 @@ interface Transaction {
   balanceBefore?: number
   balanceAfter?: number
   category?: string
+  pdfUrl?: string | null
 }
 
 const SEED_TRANSACTIONS: Transaction[] = [
@@ -55,7 +63,7 @@ const SEED_TRANSACTIONS: Transaction[] = [
   {
     id: 'seed-payroll',
     recipient: 'Výplata sporiteľňa',
-    amount: 1200.0,
+    amount: 6660.0,
     date: '10.07.2026',
     createdAt: '2026-07-10T08:00:00.000Z',
     type: 'incoming',
@@ -129,6 +137,7 @@ function normalizeTransaction(raw: Partial<Transaction> & { recipient?: string; 
     balanceBefore: raw.balanceBefore,
     balanceAfter: raw.balanceAfter,
     category: raw.category,
+    pdfUrl: raw.pdfUrl ?? null,
   }
 }
 
@@ -172,6 +181,8 @@ export default function GeorgePrototypePage() {
   const [slovenskoNumber, setSlovenskoNumber] = useState('0850 111 888')
   const [zahranicieNumber, setZahranicieNumber] = useState('+421 2 48 62 66')
   const [isLoaded, setIsLoaded] = useState(false)
+  const [pdfOverlayOpen, setPdfOverlayOpen] = useState(false)
+  const [pdfOverlayPhase, setPdfOverlayPhase] = useState<'preparing' | 'done'>('preparing')
 
   // GEORGE PRIHLASOVACIE STAVY
   const [isSimulatorLoggedIn, setIsSimulatorLoggedIn] = useState(false)
@@ -443,7 +454,12 @@ export default function GeorgePrototypePage() {
 
       startFaceDetection()
     } catch (err) {
-      console.error('Camera access error:', err)
+      // NotAllowedError is expected in Simulator / denied camera — do not console.error
+      // (Next.js Dev Overlay treats console.error as a blocking "Issue").
+      const name = err instanceof DOMException ? err.name : ''
+      if (name !== 'NotAllowedError') {
+        console.warn('Camera access error:', err)
+      }
       showToast('Webkamera je nedostupná alebo prístup bol zamietnutý. Použite PIN kód 666666.')
       cancelBiometrics()
     }
@@ -455,11 +471,46 @@ export default function GeorgePrototypePage() {
     }
   }, [])
 
-  // Načítanie stavu a transakcií zo Supabase DB a localStorage
+  // PWA / iOS home-screen / Capacitor → force full-bleed (no desktop phone frame)
   useEffect(() => {
+    const nav = window.navigator as Navigator & { standalone?: boolean }
+    const mqStandalone = window.matchMedia('(display-mode: standalone)')
+    const mqMinimal = window.matchMedia('(display-mode: minimal-ui)')
+    const mqFullscreen = window.matchMedia('(display-mode: fullscreen)')
+
+    const sync = () => {
+      const isStandalone =
+        mqStandalone.matches ||
+        mqMinimal.matches ||
+        mqFullscreen.matches ||
+        nav.standalone === true ||
+        Boolean((window as Window & { Capacitor?: unknown }).Capacitor) ||
+        /Capacitor/i.test(nav.userAgent)
+      document.documentElement.classList.toggle('d2-standalone', isStandalone)
+    }
+
+    sync()
+    mqStandalone.addEventListener('change', sync)
+    mqMinimal.addEventListener('change', sync)
+    mqFullscreen.addEventListener('change', sync)
+    return () => {
+      mqStandalone.removeEventListener('change', sync)
+      mqMinimal.removeEventListener('change', sync)
+      mqFullscreen.removeEventListener('change', sync)
+      document.documentElement.classList.remove('d2-standalone')
+    }
+  }, [])
+
+  // Načítanie stavu a transakcií cez /api/transactions (+ localStorage fallback)
+  useEffect(() => {
+    const controller = new AbortController()
+
     const loadFromDb = async () => {
       try {
-        const res = await fetch('/api/transactions')
+        const res = await fetch('/api/transactions', {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
         if (res.ok) {
           const data = await res.json()
           if (data.success) {
@@ -474,18 +525,32 @@ export default function GeorgePrototypePage() {
                 spaceBalance: accBalance ?? prev.spaceBalance,
                 transactions: rawTxns.map((t: Partial<Transaction>) => normalizeTransaction(t)),
               }))
+              void syncWidgetFromTransactionsApi({
+                transactions: rawTxns,
+                dailyLimit: data.dailyLimit,
+                accounts: data.accounts,
+              })
               setIsLoaded(true)
               return
             }
             // No txns yet, but seeded demo account balance (CI / ensure-db)
             if (accBalance !== undefined) {
               setState((prev) => ({ ...prev, spaceBalance: accBalance }))
+              void syncWidgetFromTransactionsApi({
+                transactions: [],
+                dailyLimit: data.dailyLimit,
+                accounts: data.accounts,
+              })
             }
           }
         }
       } catch (e) {
-        console.error('Chyba pri načítaní zo Supabase DB:', e)
+        if (controller.signal.aborted) return
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error('Chyba pri načítaní /api/transactions:', msg, e)
       }
+
+      if (controller.signal.aborted) return
 
       try {
         const saved = localStorage.getItem('george_pwa_state')
@@ -509,10 +574,12 @@ export default function GeorgePrototypePage() {
       } catch (e) {
         console.error('Chyba pri načítaní stavu z localStorage:', e)
       } finally {
-        setIsLoaded(true)
+        if (!controller.signal.aborted) setIsLoaded(true)
       }
     }
-    loadFromDb()
+    void loadFromDb()
+
+    return () => controller.abort()
 
     // Push / browser notifications disabled on dashboard2 (were spamming /api/push/send).
   }, [])
@@ -593,17 +660,51 @@ export default function GeorgePrototypePage() {
     const remaining = Math.max(0, DAILY_PAYMENT_LIMIT_EUR - usedToday)
     if (amount > remaining) {
       showToast(
-        `Denný limit ${DAILY_PAYMENT_LIMIT_EUR.toFixed(0)} €. Zostáva ${remaining.toFixed(2)} €.`
+        `Limit 24 h: ${DAILY_PAYMENT_LIMIT_EUR.toFixed(0)} €. Zostáva ${remaining.toFixed(2)} €.`
       )
       return
     }
 
     const balanceBefore = state.spaceBalance
     const balanceAfter = state.spaceBalance - amount
-    const txnId = newTxnId('pay')
-    const createdAt = new Date().toISOString()
+    const optimisticId = newTxnId('pay')
     const createdAtLabel = new Date().toLocaleString('sk-SK')
 
+    // Persist first so /pohyby sees the outgoing payment immediately.
+    let serverTxn: Partial<Transaction> & { id?: string } = {}
+    try {
+      const res = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient,
+          iban,
+          vs,
+          amount,
+          note,
+          type: 'outgoing',
+          category: 'Nezaradené výdavky',
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.success === false) {
+        showToast(
+          data.error ||
+            `Platbu sa nepodarilo zapísať (limit 24 h ${DAILY_PAYMENT_LIMIT_EUR} €).`
+        )
+        return
+      }
+      serverTxn = data.transaction || {}
+      // Instant push to open /pohyby tabs
+      notifyPohybyLive({ type: 'payment', transactionId: serverTxn.id || optimisticId })
+    } catch (err) {
+      console.warn('[dashboard2] DB persist error:', err)
+      showToast('Chyba siete — platba nebola zapísaná do dashboardu.')
+      return
+    }
+
+    const txnId = serverTxn.id || optimisticId
+    const createdAt = serverTxn.createdAt || new Date().toISOString()
     const newTxn: Transaction = {
       id: txnId,
       recipient,
@@ -615,19 +716,32 @@ export default function GeorgePrototypePage() {
       vs: vs || undefined,
       type: 'outgoing',
       status: 'Spracované',
-      balanceBefore,
-      balanceAfter,
+      balanceBefore: serverTxn.balanceBefore ?? balanceBefore,
+      balanceAfter: serverTxn.balanceAfter ?? balanceAfter,
       category: 'Nezaradené výdavky',
     }
 
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      spaceBalance: balanceAfter,
+      spaceBalance: newTxn.balanceAfter ?? balanceAfter,
       transactions: [newTxn, ...prev.transactions],
     }))
 
-    // HTML confirmation must fire immediately on authorize — do not block on DB.
-    void downloadPaymentConfirmationPdf({
+    void syncWidgetFromTransactionsApi({
+      transactions: [newTxn, ...state.transactions],
+      accounts: [
+        {
+          balance: Math.round((newTxn.balanceAfter ?? balanceAfter) * 100),
+        },
+      ],
+    })
+
+    closePaymentSheet()
+    setTransactionFilter('all')
+    showToast(`Platba ${amount.toFixed(2)} € pre ${recipient} bola zapísaná.`)
+
+    // PDF confirmation after successful DB write (overlay + upload)
+    void generateAndDeliverReceipt({
       transactionId: txnId,
       createdAt: createdAtLabel,
       status: 'Štandardný platobný príkaz',
@@ -646,63 +760,73 @@ export default function GeorgePrototypePage() {
       repeatDays: '0',
       createTemplate: false,
       emailConfirmation: false,
-      balanceBefore: balanceBefore.toFixed(2),
-      balanceAfter: balanceAfter.toFixed(2),
+      balanceBefore: (newTxn.balanceBefore ?? balanceBefore).toFixed(2),
+      balanceAfter: (newTxn.balanceAfter ?? balanceAfter).toFixed(2),
     })
-
-    closePaymentSheet()
-    setTransactionFilter('all')
-    showToast(`Platba ${amount.toFixed(2)} € pre ${recipient} bola úspešne odoslaná.`)
-
-    // Persist in background; keep client payment even if remote save fails.
-    void (async () => {
-      try {
-        const res = await fetch('/api/transactions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            recipient,
-            iban,
-            vs,
-            amount,
-            note,
-            type: 'outgoing',
-            category: 'Nezaradené výdavky',
-          }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok || data.success === false) {
-          console.warn('[dashboard2] DB persist failed:', data.error || res.status)
-          return
-        }
-        if (data.transaction?.id && data.transaction.id !== txnId) {
-          setState((prev) => ({
-            ...prev,
-            transactions: prev.transactions.map((t) =>
-              t.id === txnId ? { ...t, id: data.transaction.id } : t
-            ),
-          }))
-        }
-      } catch (err) {
-        console.warn('[dashboard2] DB persist error:', err)
-      }
-    })()
   }
 
-  const downloadTxnReceipt = (txn: Transaction) => {
-    const isOutgoing =
-      txn.type === 'outgoing' || txn.type === 'transfer' || txn.amount < 0
-    if (!isOutgoing) {
-      showToast('Doklad je dostupný len pre odchádzajúce platby.')
-      return
+  const uploadReceiptPdf = async (transactionId: string, blob: Blob) => {
+    try {
+      const form = new FormData()
+      form.append('transactionId', transactionId)
+      form.append('file', blob, `${transactionId}.pdf`)
+      const res = await fetch('/api/receipts/upload', { method: 'POST', body: form })
+      if (!res.ok) return
+      const json = (await res.json()) as { success?: boolean; pdfUrl?: string }
+      if (json.success && json.pdfUrl) {
+        setState((prev) => ({
+          ...prev,
+          transactions: prev.transactions.map((t) =>
+            t.id === transactionId ? { ...t, pdfUrl: json.pdfUrl } : t
+          ),
+        }))
+        setSelectedTransaction((prev) =>
+          prev?.id === transactionId ? { ...prev, pdfUrl: json.pdfUrl } : prev
+        )
+      }
+    } catch (err) {
+      console.warn('[dashboard2] receipt upload failed:', err)
     }
+  }
+
+  const generateAndDeliverReceipt = async (data: PaymentConfirmationPdfData) => {
+    setPdfOverlayPhase('preparing')
+    setPdfOverlayOpen(true)
+    let closedEarly = false
+    try {
+      const result = await downloadPaymentConfirmationAsPdf(data)
+      if (result.ok && result.blob) {
+        setPdfOverlayPhase('done')
+        void uploadReceiptPdf(data.transactionId, result.blob)
+        closedEarly = true
+        window.setTimeout(() => setPdfOverlayOpen(false), 600)
+        return
+      }
+      if (result.usedHtmlFallback) {
+        showToast('PDF sa nepodarilo vytvoriť — stiahnuté HTML.')
+      }
+    } catch {
+      try {
+        await downloadPaymentConfirmationHtml(data)
+        showToast('PDF sa nepodarilo vytvoriť — stiahnuté HTML.')
+      } catch {
+        showToast('Doklad sa nepodarilo stiahnuť.')
+      }
+    } finally {
+      if (!closedEarly) {
+        window.setTimeout(() => setPdfOverlayOpen(false), 400)
+      }
+    }
+  }
+
+  const buildTxnReceiptData = (txn: Transaction): PaymentConfirmationPdfData => {
     const abs = Math.abs(txn.amount)
     const parsed = parseMovementDescription(
       [txn.recipient, txn.note, txn.iban ? `IBAN: ${txn.iban}` : '', txn.vs ? `VS: ${txn.vs}` : '']
         .filter(Boolean)
         .join(' ')
     )
-    void downloadPaymentConfirmationPdf({
+    return {
       transactionId: txn.id,
       createdAt: txn.createdAt
         ? new Date(txn.createdAt).toLocaleString('sk-SK')
@@ -726,7 +850,22 @@ export default function GeorgePrototypePage() {
       emailConfirmation: false,
       balanceBefore: (txn.balanceBefore ?? state.spaceBalance + abs).toFixed(2),
       balanceAfter: (txn.balanceAfter ?? state.spaceBalance).toFixed(2),
-    })
+    }
+  }
+
+  const downloadTxnReceipt = (txn: Transaction) => {
+    const isOutgoing =
+      txn.type === 'outgoing' || txn.type === 'transfer' || txn.amount < 0
+    if (!isOutgoing) {
+      showToast('Doklad je dostupný len pre odchádzajúce platby.')
+      return
+    }
+    void generateAndDeliverReceipt(buildTxnReceiptData(txn))
+  }
+
+  const openStoredPdf = (txn: Transaction) => {
+    if (!txn.pdfUrl) return
+    window.open(txn.pdfUrl, '_blank', 'noopener,noreferrer')
   }
 
   const showToast = (message: string) => {
@@ -810,6 +949,17 @@ export default function GeorgePrototypePage() {
       return () => window.removeEventListener('keydown', handleKeyDown)
     }
   }, [isPaymentSheetOpen])
+
+  // Lock page scroll while viewport-fixed overlays are open (Android Chrome)
+  useEffect(() => {
+    const overlayOpen = isPaymentSheetOpen || !!selectedTransaction || !!modalType
+    if (!overlayOpen) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [isPaymentSheetOpen, selectedTransaction, modalType])
   useEffect(() => {
     if (isSearchOpen) {
       const timer = setTimeout(() => {
@@ -847,44 +997,10 @@ export default function GeorgePrototypePage() {
     setIsDemoDrawerOpen(prev => !prev)
   }
 
-  const simulateIncomingCredit = (amount: number) => {
-    setState(prev => {
-      const balanceBefore = prev.spaceBalance
-      const balanceAfter = prev.spaceBalance + amount
-      const txn: Transaction = {
-        id: newTxnId('in'),
-        recipient: 'Simulovaný vklad / Bonus',
-        amount,
-        date: 'Dnes',
-        createdAt: new Date().toISOString(),
-        type: 'deposit',
-        status: 'Spracované',
-        balanceBefore,
-        balanceAfter,
-        category: 'Dobitie',
-        note: 'Simulovaný vklad',
-      }
-      return {
-        ...prev,
-        spaceBalance: balanceAfter,
-        transactions: [txn, ...prev.transactions],
-      }
-    })
-
-    // Uloženie do Supabase DB
-    fetch('/api/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipient: 'Simulovaný vklad / Bonus',
-        amount,
-        type: 'deposit',
-        category: 'Dobitie',
-        note: 'Simulovaný vklad',
-      }),
-    }).catch((err) => console.error('Chyba ukladania vkladu do Supabase DB:', err))
-
-    showToast(`Úspešne pripísaná platba: +${amount.toFixed(2)} €.`)
+  const simulateIncomingCredit = (_amount: number) => {
+    showToast(
+      'Dobíjanie € je zakázané. Automatické obnovenie zostatku je možné až po 24 hodinách.'
+    )
   }
 
   const simulateCashbackBonus = (amount: number) => {
@@ -934,8 +1050,8 @@ export default function GeorgePrototypePage() {
       }
     })
 
-    // Uloženie do Supabase DB
-    fetch('/api/transactions', {
+    // Okamžitý zápis odchádzajúcej investície do DB + live dashboard
+    void fetch('/api/transactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -945,7 +1061,16 @@ export default function GeorgePrototypePage() {
         category: 'Investície',
         note: fundName,
       }),
-    }).catch((err) => console.error('Chyba ukladania investície do Supabase DB:', err))
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}))
+        if (res.ok && data.success !== false) {
+          notifyPohybyLive({ type: 'payment', transactionId: data.transaction?.id })
+        } else {
+          console.error('Chyba ukladania investície do Supabase DB:', data.error || res.status)
+        }
+      })
+      .catch((err) => console.error('Chyba ukladania investície do Supabase DB:', err))
 
     showToast(`Nákup podielov ${fundName} za ${sum.toFixed(2)} € úspešne spracovaný.`)
   }
@@ -1055,21 +1180,23 @@ export default function GeorgePrototypePage() {
         style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}
       >
         
-        {/* Desktop chrome — skrytý na PIN, aby PIN bol plných 100vh */}
+        {/* Desktop chrome — only ≥lg; hidden on PIN / mobile / PWA standalone */}
         {!isPasscodeScreen && (
           <>
-            <DashboardHeader user={user} />
-            <div className="w-full bg-[#0a0a10] border-b border-slate-900/40 px-6 py-3.5 text-[15px] font-bold text-white tracking-tight select-none">
+            <div className="d2-desktop-chrome hidden lg:block">
+              <DashboardHeader user={user} />
+            </div>
+            <div className="d2-desktop-chrome hidden lg:block w-full bg-[#0a0a10] border-b border-slate-900/40 px-6 py-3.5 text-[15px] font-bold text-white tracking-tight select-none">
               Domov
             </div>
           </>
         )}
 
         <div
-          className={`flex items-center justify-center relative ${
+          className={`d2-phone-center flex justify-center relative ${
             isPasscodeScreen
-              ? 'min-h-dvh h-dvh p-0'
-              : 'flex-1 p-0 sm:p-6 md:p-12'
+              ? 'min-h-dvh h-dvh p-0 items-stretch'
+              : 'flex-1 p-0 items-stretch lg:items-center lg:p-6 xl:p-12'
           }`}
         >
           
@@ -1264,12 +1391,12 @@ export default function GeorgePrototypePage() {
           <div className="fixed top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-112.5 h-112.5 bg-purple-900/10 rounded-full accent-glow pointer-events-none z-0"></div>
           <div className="fixed bottom-1/4 left-1/3 w-87.5 h-87.5 bg-blue-900/10 rounded-full accent-glow pointer-events-none z-0"></div>
 
-          {/* Telefón: originálne pozadie #12131a — PIN screen always full viewport */}
+          {/* Shell: full-bleed on mobile/PWA; phone preview only ≥lg (not PIN) */}
           <div
-            className={`w-full max-w-103 bg-[#12131a] relative flex flex-col overflow-hidden z-10 ${
+            className={`d2-phone-shell w-full max-w-none bg-[#12131a] relative flex flex-col overflow-hidden z-10 ${
               isPasscodeScreen
-                ? 'min-h-dvh h-dvh'
-                : 'min-h-screen sm:min-h-223 sm:max-h-223 sm:rounded-[44px] sm:ring-12 sm:ring-neutral-800/90 sm:shadow-[0_30px_80px_-10px_rgba(0,0,0,0.95)]'
+                ? 'min-h-dvh h-dvh max-h-dvh'
+                : 'h-dvh max-h-dvh min-h-0 lg:max-w-103 lg:h-223 lg:min-h-223 lg:max-h-223 lg:rounded-[44px] lg:ring-12 lg:ring-neutral-800/90 lg:shadow-[0_30px_80px_-10px_rgba(0,0,0,0.95)]'
             }`}
           >
             
@@ -1719,18 +1846,18 @@ export default function GeorgePrototypePage() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#030305] text-slate-100 flex flex-col font-sans relative overflow-x-hidden">
+    <div className="min-h-dvh h-dvh w-full bg-[#030305] text-slate-100 flex flex-col font-sans relative overflow-hidden">
       
-      {/* Hlavné desktop menu na vrchu stránky */}
-      <DashboardHeader user={user} />
-      
-      {/* Podmenu "Domov" */}
-      <div className="w-full bg-[#0a0a10] border-b border-slate-900/40 px-6 py-3.5 text-[15px] font-bold text-white tracking-tight select-none">
+      {/* Desktop chrome — only ≥lg; hidden on mobile / PWA standalone */}
+      <div className="d2-desktop-chrome hidden lg:block shrink-0">
+        <DashboardHeader user={user} />
+      </div>
+      <div className="d2-desktop-chrome hidden lg:block shrink-0 w-full bg-[#0a0a10] border-b border-slate-900/40 px-6 py-3.5 text-[15px] font-bold text-white tracking-tight select-none">
         Domov
       </div>
 
-      {/* Centrovací kontajner pre mobilný simulátor */}
-      <div className="flex-1 flex items-center justify-center p-0 sm:p-6 md:p-12 relative">
+      {/* Centrovací kontajner: full-bleed mobile; phone preview ≥lg */}
+      <div className="d2-phone-center flex-1 min-h-0 flex items-stretch justify-center p-0 lg:items-center lg:p-6 xl:p-12 relative">
       
       <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -1793,13 +1920,13 @@ export default function GeorgePrototypePage() {
       <div className="fixed top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-112.5 h-112.5 bg-purple-900/10 rounded-full accent-glow pointer-events-none z-0"></div>
       <div className="fixed bottom-1/4 left-1/3 w-87.5 h-87.5 bg-blue-900/10 rounded-full accent-glow pointer-events-none z-0"></div>
 
-      {/* HLAVNÝ MOBILNÝ KONTAJNER: Presná farba #0a0a10 */}
-      <div className="w-full max-w-103 bg-[#0a0a10] min-h-screen sm:min-h-223 sm:max-h-223 sm:rounded-[44px] sm:ring-12 sm:ring-neutral-800/90 sm:shadow-[0_30px_80px_-10px_rgba(0,0,0,0.95)] relative flex flex-col justify-between overflow-hidden z-10">
+      {/* HLAVNÝ SHELL: full-bleed mobile; desktop phone frame ≥lg */}
+      <div className="d2-phone-shell w-full max-w-none bg-[#0a0a10] h-dvh max-h-dvh min-h-0 lg:max-w-103 lg:h-223 lg:min-h-223 lg:max-h-223 lg:rounded-[44px] lg:ring-12 lg:ring-neutral-800/90 lg:shadow-[0_30px_80px_-10px_rgba(0,0,0,0.95)] relative flex flex-col justify-between overflow-hidden z-10">
         
         {/* INNER SCROLLABLE WORKSPACE */}
         <div 
-          className="flex-1 overflow-y-auto no-scrollbar flex flex-col justify-between transition-all duration-300"
-          style={{ paddingBottom: isDemoDrawerOpen ? '250px' : '96px' }}
+          className="flex-1 min-h-0 overflow-y-auto no-scrollbar flex flex-col justify-between transition-all duration-300"
+          style={{ paddingBottom: isDemoDrawerOpen ? '250px' : 'calc(96px + env(safe-area-inset-bottom, 0px))' }}
         >
           
           {/*==================================================
@@ -1807,7 +1934,7 @@ export default function GeorgePrototypePage() {
               ==================================================*/}
           <div id="content-prehlad" className={`tab-content ${state.activeTab === 'prehlad' ? 'block' : 'hidden'}`}>
             {/* HEADER S PRESNÝM ODTIEŇOM MODREJ #327bf5 */}
-            <header className="sticky top-0 bg-[#0a0a10]/95 backdrop-blur-md z-30 px-6 pt-5 pb-4 flex items-center justify-between">
+            <header className="sticky top-0 bg-[#0a0a10]/95 backdrop-blur-md z-30 px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4 flex items-center justify-between">
               <div className="w-8"></div>
               <h1 className="text-[20px] font-bold tracking-tight text-white select-none">Prehľad</h1>
               
@@ -1985,7 +2112,7 @@ export default function GeorgePrototypePage() {
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">História</p>
                       <h2 className="text-base font-bold text-white mt-1">Prehľad prevodov</h2>
                       <p className="mt-1 text-[11px] text-slate-400">
-                        Denný limit:{' '}
+                        Limit 24 h:{' '}
                         <span className="font-semibold text-slate-200">
                           {(
                             DAILY_PAYMENT_LIMIT_EUR -
@@ -2087,6 +2214,91 @@ export default function GeorgePrototypePage() {
                   </div>
                 )}
               </section>
+
+              {/* DOKLADY SANDBOX — persistent PDF receipts */}
+              <section
+                id="receipts-sandbox"
+                data-testid="receipts-sandbox"
+                className="mt-4 mb-8 george-card rounded-2xl overflow-hidden border border-slate-800/40 shadow-lg shadow-black/20"
+              >
+                <div className="p-4 border-b border-slate-800/40">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Sandbox</p>
+                  <h2 className="text-base font-bold text-white mt-1">Doklady</h2>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Uložené PDF potvrdenia k odchádzajúcim platbám.
+                  </p>
+                </div>
+                {(() => {
+                  const receiptTxns = state.transactions.filter(
+                    (t) =>
+                      t.type === 'outgoing' ||
+                      t.type === 'transfer' ||
+                      t.amount < 0
+                  )
+                  if (receiptTxns.length === 0) {
+                    return (
+                      <div className="px-4 py-8 text-center">
+                        <p className="text-sm font-bold text-white">Zatiaľ žiadne uložené doklady</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Po odoslaní platby sa tu objavia.
+                        </p>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div className="divide-y divide-slate-800/40" data-testid="receipts-sandbox-list">
+                      {receiptTxns.slice(0, 20).map((txn) => {
+                        const meta = getTxnMeta(txn)
+                        return (
+                          <div
+                            key={`receipt-${txn.id}`}
+                            data-testid="receipt-sandbox-row"
+                            className="flex flex-col gap-2 px-4 py-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-white">{txn.recipient}</p>
+                                <p className="mt-0.5 text-[11px] text-slate-400">
+                                  {txn.date} · {meta.signedAmount}
+                                </p>
+                              </div>
+                              {txn.pdfUrl ? (
+                                <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-400">
+                                  PDF
+                                </span>
+                              ) : (
+                                <span className="shrink-0 rounded-full border border-slate-700 bg-[#1b1b26] px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-slate-500">
+                                  —
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              {txn.pdfUrl ? (
+                                <button
+                                  type="button"
+                                  data-testid="receipt-open-pdf"
+                                  onClick={() => openStoredPdf(txn)}
+                                  className="flex-1 min-h-10 rounded-xl bg-[#327bf5] text-white text-xs font-bold"
+                                >
+                                  Otvoriť PDF
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                data-testid="receipt-regenerate"
+                                onClick={() => downloadTxnReceipt(txn)}
+                                className="flex-1 min-h-10 rounded-xl border border-slate-700 bg-[#1b1b26] text-slate-200 text-xs font-bold"
+                              >
+                                {txn.pdfUrl ? 'Regenerovať' : 'Vygenerovať'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
+              </section>
             </main>
           </div>
 
@@ -2094,7 +2306,7 @@ export default function GeorgePrototypePage() {
               ZÁLOŽKA 2: INVEST (PORTFÓLIO A TRHY)
               ==================================================*/}
           <div id="content-invest" className={`tab-content ${state.activeTab === 'invest' ? 'block' : 'hidden'}`}>
-            <header className="px-6 pt-5 pb-4 flex items-center justify-between">
+            <header className="px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4 flex items-center justify-between">
               <h1 className="text-xl font-bold text-white">Investície</h1>
               <button onClick={() => showModal('cards-modal')} className="bg-[#327bf5]/20 text-[#327bf5] border border-[#327bf5]/25 px-3 py-1 rounded-full text-xs font-semibold hover:bg-[#327bf5]/30 active:scale-95 transition-all">
                 + Kúpiť
@@ -2149,7 +2361,7 @@ export default function GeorgePrototypePage() {
               ZÁLOŽKA 3: OBJAVUJTE
               ==================================================*/}
           <div id="content-objavujte" className={`tab-content ${state.activeTab === 'objavujte' ? 'block' : 'hidden'}`}>
-            <header className="px-6 pt-5 pb-4">
+            <header className="px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4">
               <h1 className="text-xl font-bold text-white">Objavujte</h1>
               <p className="text-xs text-slate-400">Služby, výhody a produkty na dosah</p>
             </header>
@@ -2186,7 +2398,7 @@ export default function GeorgePrototypePage() {
               ZÁLOŽKA 4: KONTAKTY
               ==================================================*/}
           <div id="content-kontakty" className={`tab-content ${state.activeTab === 'kontakty' ? 'block' : 'hidden'}`}>
-            <header className="px-6 pt-5 pb-4">
+            <header className="px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4">
               <h1 className="text-xl font-bold text-white">Kontakty</h1>
               <p className="text-xs text-slate-400">Sme tu pre vás 24/7</p>
             </header>
@@ -2228,7 +2440,7 @@ export default function GeorgePrototypePage() {
             SPODNÁ NAVIGAČNÁ LIŠTA (AKTÍVNA KAPSULA 1:1)
             ==================================================*/}
         <nav 
-          className="absolute left-0 right-0 bg-[#0a0a10]/98 backdrop-blur-md border-t border-slate-900/40 px-4 py-3.5 flex justify-around items-center z-40 sm:rounded-b-[42px] transition-all duration-300"
+          className="d2-tab-nav absolute left-0 right-0 bg-[#0a0a10]/98 backdrop-blur-md border-t border-slate-900/40 px-4 pt-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] flex justify-around items-center z-40 lg:rounded-b-[42px] transition-all duration-300"
           style={{ bottom: isDemoDrawerOpen ? '172px' : '0px' }}
         >
           
@@ -2324,12 +2536,13 @@ export default function GeorgePrototypePage() {
 
         </nav>
 
-        {/* BOTTOM SHEET: NOVÁ PLATBA */}
+        {/* BOTTOM SHEET: NOVÁ PLATBA — fixed to viewport (avoids absolute-in-tall-shell) */}
         <div
           id="payment-sheet"
-          className={`absolute inset-0 bg-black/75 backdrop-blur-sm z-50 flex flex-col justify-end transition-all duration-300 ${
-            isPaymentSheetOpen ? 'opacity-100 pointer-events-auto translate-y-0' : 'opacity-0 pointer-events-none translate-y-full'
+          className={`fixed inset-0 z-50 flex flex-col justify-end bg-black/75 backdrop-blur-sm transition-opacity duration-300 lg:absolute ${
+            isPaymentSheetOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
+          aria-hidden={!isPaymentSheetOpen}
         >
           <div
             onClick={closePaymentSheet}
@@ -2337,7 +2550,9 @@ export default function GeorgePrototypePage() {
           />
           
           <div
-            className="bg-[#12131b] w-full rounded-t-[32px] p-6 border-t border-slate-800 z-10 shadow-2xl relative"
+            className={`bg-[#12131b] w-full max-h-[min(92dvh,100%)] overflow-y-auto no-scrollbar rounded-t-[32px] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] border-t border-slate-800 z-10 shadow-2xl relative transition-transform duration-300 ease-out ${
+              isPaymentSheetOpen ? 'translate-y-0' : 'translate-y-full'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div
@@ -2435,21 +2650,21 @@ export default function GeorgePrototypePage() {
           </div>
         </div>
 
-        {/* DETAIL TRANSAKCIE */}
+        {/* DETAIL TRANSAKCIE — fixed to viewport */}
         <div
           id="txn-detail-modal"
-          className={`absolute inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center transition-all duration-300 p-0 sm:p-5 ${
+          className={`fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-md transition-all duration-300 p-0 lg:absolute lg:items-center lg:p-5 ${
             selectedTransaction ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
           onClick={() => setSelectedTransaction(null)}
         >
           {selectedTransaction && (
             <div
-              className="bg-[#12131b] w-full sm:rounded-3xl rounded-t-3xl border border-slate-800 shadow-2xl relative max-h-[85%] overflow-y-auto no-scrollbar"
+              className="bg-[#12131b] w-full lg:rounded-3xl rounded-t-3xl border border-slate-800 shadow-2xl relative max-h-[min(85dvh,85%)] overflow-y-auto no-scrollbar pb-[max(0px,env(safe-area-inset-bottom))]"
               onClick={(e) => e.stopPropagation()}
               data-testid="txn-detail-modal"
             >
-              <div className="sticky top-0 bg-[#12131b]/95 backdrop-blur-md flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-800/40">
+              <div className="sticky top-0 bg-[#12131b]/95 backdrop-blur-md flex items-center justify-between px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-3 border-b border-slate-800/40">
                 <h3 className="text-base font-bold text-white">Detail prevodu</h3>
                 <button
                   type="button"
@@ -2505,13 +2720,27 @@ export default function GeorgePrototypePage() {
                 selectedTransaction.type === 'transfer' ||
                 selectedTransaction.amount < 0) && (
                 <div className="border-t border-slate-800/40 p-4 flex flex-col gap-2">
+                  {selectedTransaction.pdfUrl ? (
+                    <button
+                      type="button"
+                      data-testid="txn-open-stored-pdf"
+                      onClick={() => openStoredPdf(selectedTransaction)}
+                      className="w-full min-h-11 rounded-xl bg-[#327bf5] hover:bg-blue-600 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-900/30"
+                    >
+                      Otvoriť uložené PDF
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     data-testid="txn-download-receipt"
                     onClick={() => downloadTxnReceipt(selectedTransaction)}
-                    className="w-full min-h-11 rounded-xl bg-[#327bf5] hover:bg-blue-600 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-900/30"
+                    className={`w-full min-h-11 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors ${
+                      selectedTransaction.pdfUrl
+                        ? 'border border-slate-700 bg-[#1b1b26] text-slate-200 hover:bg-slate-800'
+                        : 'bg-[#327bf5] hover:bg-blue-600 text-white shadow-lg shadow-blue-900/30'
+                    }`}
                   >
-                    Stiahnuť doklad
+                    {selectedTransaction.pdfUrl ? 'Regenerovať doklad' : 'Stiahnuť doklad'}
                   </button>
                 </div>
               )}
@@ -2519,9 +2748,9 @@ export default function GeorgePrototypePage() {
           )}
         </div>
 
-        {/* POP-UP MODAL PRE DETAILY */}
-        <div id="general-modal" className={`absolute inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center transition-all duration-300 p-5 ${modalType ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
-          <div className="bg-[#12131b] w-full rounded-3xl border border-slate-800 p-5 shadow-2xl relative">
+        {/* POP-UP MODAL PRE DETAILY — fixed to viewport */}
+        <div id="general-modal" className={`fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md transition-all duration-300 p-5 lg:absolute ${modalType ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+          <div className="bg-[#12131b] w-full max-h-[min(90dvh,100%)] overflow-y-auto no-scrollbar rounded-3xl border border-slate-800 p-5 shadow-2xl relative">
             <button
               type="button"
               onClick={hideModal}
@@ -2581,7 +2810,7 @@ export default function GeorgePrototypePage() {
             setIsSearchOpen(false)
             setSearchQuery('')
           }}
-          className={`absolute inset-0 bg-black/75 backdrop-blur-xs z-40 transition-all duration-300 ${
+          className={`fixed inset-0 z-40 bg-black/75 backdrop-blur-xs transition-all duration-300 lg:absolute ${
             isSearchOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
         />
@@ -2589,7 +2818,7 @@ export default function GeorgePrototypePage() {
         {/* HĽADANIE MODAL DRAWER */}
         <div
           id="search-drawer"
-          className={`absolute inset-x-0 top-0 bg-[#0a0a10] border-b border-slate-800/80 z-50 p-5 shadow-2xl transition-all duration-300 flex flex-col justify-between ${
+          className={`fixed inset-x-0 top-0 z-50 bg-[#0a0a10] border-b border-slate-800/80 p-5 pt-[max(1.25rem,env(safe-area-inset-top))] shadow-2xl transition-all duration-300 flex flex-col justify-between lg:absolute ${
             isSearchOpen ? 'translate-y-0 opacity-100 pointer-events-auto' : '-translate-y-full opacity-0 pointer-events-none'
           }`}
         >
@@ -2663,7 +2892,9 @@ export default function GeorgePrototypePage() {
         </div>
 
         {/* TOAST NOTIFIKÁCIA */}
-        <div id="toast" className={`absolute top-10 left-1/2 -translate-x-1/2 bg-blue-600 border border-blue-400 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-xl transition-all duration-300 text-center w-[85%] z-100 ${isToastVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+        <PdfGenerateOverlay open={pdfOverlayOpen} phase={pdfOverlayPhase} />
+
+        <div id="toast" className={`fixed top-[max(2.5rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 bg-blue-600 border border-blue-400 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-xl transition-all duration-300 text-center w-[85%] max-w-103 z-100 lg:absolute lg:top-10 ${isToastVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
           {toastMessage}
         </div>
 
@@ -2674,12 +2905,27 @@ export default function GeorgePrototypePage() {
             <button onClick={toggleDemoDrawer} className="text-xs text-slate-400 hover:text-white">Zavrieť</button>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => simulateIncomingCredit(50.00)} className="bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/30 font-semibold py-2 rounded-xl text-[11px] hover:bg-[#10b981]/30 active:scale-95 transition-all">
-              + Prijať 50,00 €
+            <button
+              type="button"
+              disabled
+              onClick={() => simulateIncomingCredit(50.00)}
+              className="bg-slate-700/40 text-slate-500 border border-slate-600/40 font-semibold py-2 rounded-xl text-[11px] cursor-not-allowed opacity-60"
+              title="Dobíjanie zakázané — auto obnovenie max 1× / 24 h"
+            >
+              + Prijať 50,00 € (zakázané)
             </button>
-            <button onClick={() => simulateIncomingCredit(1000.00)} className="bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/30 font-semibold py-2 rounded-xl text-[11px] hover:bg-[#10b981]/30 active:scale-95 transition-all">
-              + Prijať 1 000,00 €
+            <button
+              type="button"
+              disabled
+              onClick={() => simulateIncomingCredit(1000.00)}
+              className="bg-slate-700/40 text-slate-500 border border-slate-600/40 font-semibold py-2 rounded-xl text-[11px] cursor-not-allowed opacity-60"
+              title="Dobíjanie zakázané — auto obnovenie max 1× / 24 h"
+            >
+              + Prijať 1 000,00 € (zakázané)
             </button>
+            <p className="col-span-2 text-[10px] text-amber-200/90 leading-snug rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2">
+              Pravidlo: manuálne dobíjanie € je vypnuté. Automatické obnovenie zostatku na 6 660 € je možné najviac 1× za 24 hodín.
+            </p>
             <button onClick={() => simulateCashbackBonus(5.50)} className="bg-purple-600/20 text-purple-300 border border-purple-500/30 font-semibold py-2 rounded-xl text-[11px] hover:bg-purple-600/30 active:scale-95 transition-all">
               Zarobiť Cashback 5,50 €
             </button>

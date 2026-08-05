@@ -10,7 +10,12 @@ export const GUEST_USER_PASSWORD =
 
 export const GUEST_USER_NAME = 'Peter'
 
-export function guestLoginPath(from = '/dashboard') {
+/** Dedicated guest inbox — never point GUEST_USER_EMAIL at a real person's mailbox. */
+export function isDedicatedGuestEmail(email: string) {
+  return email.trim().toLowerCase().endsWith('@local.test')
+}
+
+export function guestLoginPath(from = '/dashboard2') {
   return `/api/auth/guest?from=${encodeURIComponent(from)}`
 }
 
@@ -18,8 +23,19 @@ export function guestLoginPath(from = '/dashboard') {
  * Align the guest credential password with GUEST_USER_PASSWORD.
  * Needed when the guest user already exists (sign-up fails) but was
  * created with a different password — otherwise /api/auth/guest 500s.
+ *
+ * Refuses to overwrite credentials when GUEST_USER_EMAIL is not a
+ * dedicated @local.test address (misconfig would reset a real user).
  */
 export async function syncGuestCredentialPassword() {
+  if (!isDedicatedGuestEmail(GUEST_USER_EMAIL)) {
+    console.error(
+      '[guest-auth] Refusing password sync: GUEST_USER_EMAIL must be a dedicated @local.test address, got:',
+      GUEST_USER_EMAIL
+    )
+    return false
+  }
+
   const { hashPassword } = await import('better-auth/crypto')
   const { pool } = await import('@/lib/db')
 
