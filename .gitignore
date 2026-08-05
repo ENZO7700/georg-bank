@@ -5,3 +5,12 @@ tmp-*
 playwright-report/
 test-results/
 .vercel.bak*/
+
+# local build / capture junk
+**/.gradle/
+maestro-shots/
+docs/slsp.pdf
+playwright/.auth/
+public/pdfs/
+.cursor/
+*.pdf
