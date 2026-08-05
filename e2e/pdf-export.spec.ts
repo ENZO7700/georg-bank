@@ -1,30 +1,24 @@
 import { test, expect } from '@playwright/test'
-import {
-  expectGeorgeHeader,
-  openNewPaymentFromMenu,
-} from './helpers/app'
+import { expectGeorgeHeader } from './helpers/app'
+import { loginWithPin } from './helpers/dashboard2'
 
 test.describe('PDF / HTML export – aktuálny flow', () => {
-  test('Dashboard2 a payment-orders majú zjednotený header', async ({ page }) => {
+  test('Dashboard a payment-orders majú zjednotený header', async ({ page }) => {
     await page.goto('/dashboard2')
     await expectGeorgeHeader(page)
 
-    await page.goto('/dashboard2/payment-orders')
+    await page.goto('/dashboard/payment-orders')
     await expect(page).toHaveURL(/payment-orders/)
     await expectGeorgeHeader(page)
   })
 
-  test('Menu → Nová platba otvorí transfer formulár', async ({ page }) => {
-    await page.goto('/dashboard2')
-    await openNewPaymentFromMenu(page)
-    await expect(page.locator('input#recipient')).toBeVisible()
-    await expect(page.locator('input#iban')).toBeVisible()
-    await expect(page.locator('input#amount')).toBeVisible()
-  })
-
-  test('Transfer formulár má tlačidlo Podpísať platbu', async ({ page }) => {
-    await page.goto('/dashboard2')
-    await openNewPaymentFromMenu(page)
-    await expect(page.getByRole('button', { name: /Podpísať platbu/i })).toBeVisible()
+  test('Dashboard2 platobný sheet má autorizáciu cez George kľúč', async ({ page }) => {
+    await loginWithPin(page)
+    await page.getByRole('button', { name: /Nová platba/i }).click()
+    await expect(page.getByRole('heading', { name: 'Nová platba' })).toBeVisible()
+    await expect(page.locator('#pay-recipient')).toBeVisible()
+    await expect(page.locator('#pay-iban')).toBeVisible()
+    await expect(page.locator('#pay-amount')).toBeVisible()
+    await expect(page.getByRole('button', { name: /Autorizovať cez George kľúč/i })).toBeVisible()
   })
 })

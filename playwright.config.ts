@@ -11,6 +11,7 @@ const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3030'
 
 const mobileFolderIgnore = [
   /production-check\.spec\.ts/,
+  /prod-safari-smoke\.spec\.ts/,
   /iphone\//,
   /iphone-14-plus\//,
   /iphone-17-air\//,
@@ -59,6 +60,9 @@ export default defineConfig({
       testIgnore: mobileFolderIgnore,
       use: {
         ...devices['Desktop Chrome'],
+        // Ensure CI runs Chromium in a desktop-sized viewport so desktop-only helpers work.
+        // This prevents openDashboardMenu from detecting a "mobile" width and throwing.
+        viewport: { width: 1280, height: 800 },
         storageState: 'playwright/.auth/user.json',
       },
       dependencies: ['setup'],

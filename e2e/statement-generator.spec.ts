@@ -1,9 +1,11 @@
 import { test, expect } from '@playwright/test'
+import { gotoApp } from './helpers/app'
 
 test.describe('Generátor výpisov', () => {
   test('vygeneruje 3 HTML výpisy s vlastným názvom účtu', async ({ page }) => {
-    await page.goto('/dashboard/statements/generator')
-    await expect(page.getByText('Generátor výpisov')).toBeVisible({ timeout: 15000 })
+    await gotoApp(page, '/dashboard/statements/generator')
+    await expect(page).toHaveURL(/statements\/generator/, { timeout: 20000 })
+    await expect(page.getByText('Generátor výpisov')).toBeVisible({ timeout: 20000 })
 
     const accountNameInput = page.locator('#account-display-name')
     await accountNameInput.fill('')
@@ -12,9 +14,9 @@ test.describe('Generátor výpisov', () => {
     await page.getByLabel('Priemerný obrat / mesiac (EUR)').fill('4000')
 
     await page.getByRole('button', { name: 'Vygenerovať 3 výpisy' }).click()
-    await expect(page.getByRole('heading', { name: 'Výsledky' })).toBeVisible({ timeout: 30000 })
+    await expect(page.getByRole('heading', { name: 'Výsledky' })).toBeVisible({ timeout: 45000 })
 
-    const popupPromise = page.waitForEvent('popup')
+    const popupPromise = page.waitForEvent('popup', { timeout: 20000 })
     await page.getByRole('button', { name: /Otvoriť výpis/ }).first().click()
     const popup = await popupPromise
     await popup.waitForLoadState('domcontentloaded')

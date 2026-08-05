@@ -4,9 +4,8 @@ import path from 'path'
 import { loginWithPin } from './helpers/dashboard2'
 
 /**
- * Overenie: po „Autorizovať cez George kľúč“ sa vygeneruje HTML potvrdenie
- * a dá sa stiahnuť v browseri (download event). PWA cesta je overená unit/share mockom
- * v tom istom download helperi + display-mode standalone smoke.
+ * Overenie: po „Autorizovať cez George kľúč“ sa vygeneruje potvrdenie (PDF alebo HTML fallback)
+ * a dá sa stiahnuť v browseri (download event).
  */
 test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
@@ -14,7 +13,10 @@ test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
   async function loginAndOpenPayment(page: import('@playwright/test').Page) {
     // E2E: force classic <a download> path (share sheet is interactive / no download event)
     await page.addInitScript(() => {
-      const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean; share?: () => Promise<void> }
+      const nav = navigator as Navigator & {
+        canShare?: (d?: ShareData) => boolean
+        share?: () => Promise<void>
+      }
       nav.canShare = () => false
       nav.share = async () => {
         throw new Error('share disabled in e2e')
@@ -73,14 +75,11 @@ test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
   })
 
   test('PWA standalone: autorizácia stále spúšťa HTML download', async ({ browser }) => {
-    // Emulácia display-mode: standalone (ako nainštalovaná PWA)
     const context = await browser.newContext({
       storageState: { cookies: [], origins: [] },
       viewport: { width: 390, height: 844 },
       isMobile: true,
       hasTouch: true,
-      // Playwright can't set display-mode CSS media via context directly in all versions;
-      // inject matchMedia override after load.
     })
     const page = await context.newPage()
 
@@ -105,7 +104,6 @@ test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
 
     await loginWithPin(page)
 
-    // SW registration (PWA shell) – should not block blob downloads
     const swOk = await page.evaluate(async () => {
       if (!('serviceWorker' in navigator)) return true
       try {

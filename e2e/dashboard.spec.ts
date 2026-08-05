@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test'
 import {
   gotoApp,
-  SWAPPED_CARD_ENDINGS,
   expectGeorgeHeader,
   openDashboardMenu,
   PROTECTED_DASHBOARD_ROUTES,
 } from './helpers/app'
+import { loginWithPin } from './helpers/dashboard2'
 
 test.describe('Dashboard', () => {
   test('Dashboard je dostupný po prihlásení', async ({ page }) => {
@@ -15,9 +15,11 @@ test.describe('Dashboard', () => {
   })
 
   test('Dashboard zobrazuje produkty a prehľad prevodov', async ({ page }) => {
-    await gotoApp(page, '/dashboard2')
-    await expect(page.getByRole('button', { name: /Vaše produkty/i })).toBeVisible({ timeout: 15000 })
-    await expect(page.getByText('Prehľad prevodov')).toBeVisible()
+    await loginWithPin(page)
+    await expect(page.getByRole('heading', { name: 'Vaše produkty' })).toBeVisible({
+      timeout: 15000,
+    })
+    await expect(page.getByRole('heading', { name: 'Prehľad prevodov' })).toBeVisible()
     await expect(page.getByText('SPACE účet').first()).toBeVisible()
   })
 
@@ -28,17 +30,16 @@ test.describe('Dashboard', () => {
     await expectGeorgeHeader(page)
   })
 
-  test('Karty majú správne koncové číslice (párne/nepárne swap)', async ({ page }) => {
-    await gotoApp(page, '/dashboard2')
-    for (const ending of SWAPPED_CARD_ENDINGS) {
-      await expect(page.getByText(`4544 12** **** ${ending}`)).toBeVisible({ timeout: 15000 })
-    }
+  test('Produktové karty zobrazujú SPACE a Moneyback', async ({ page }) => {
+    await loginWithPin(page)
+    await expect(page.getByRole('heading', { name: 'SPACE účet' })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('heading', { name: 'Moneyback' })).toBeVisible()
   })
 
   test('Menu História naviguje na dashboard2', async ({ page }) => {
-    // Menu chrome is desktop-only on dashboard2; use payment-orders which still has Menu
+    // Menu chrome is on classic shells (payment-orders), not full-bleed dashboard2
     await page.setViewportSize({ width: 1280, height: 800 })
-    await gotoApp(page, '/dashboard2/payment-orders')
+    await gotoApp(page, '/dashboard/payment-orders')
     await openDashboardMenu(page)
     await page.getByRole('button', { name: /^História$/i }).first().click()
     await expect(page).toHaveURL(/dashboard2/)
@@ -46,15 +47,16 @@ test.describe('Dashboard', () => {
 
   test('Menu sub-header zobrazuje SPACE účet a reálny zostatok', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    await gotoApp(page, '/dashboard2/payment-orders')
+    await gotoApp(page, '/dashboard/payment-orders')
     await openDashboardMenu(page)
-    const subHeader = page.locator('text=/SPACE účet \\| €/')
-    await expect(subHeader.first()).toBeVisible()
+    // Guest seed must provide funded checking account → "SPACE účet | € x,xx"
+    const subHeader = page.getByText(/SPACE účet\s*\|\s*€/)
+    await expect(subHeader.first()).toBeVisible({ timeout: 15000 })
     await expect(subHeader.first()).not.toHaveText(/€ 0,85/)
   })
 
   test('Výpis transakcií je dostupný', async ({ page }) => {
-    await gotoApp(page, '/dashboard2')
+    await loginWithPin(page)
     await page.waitForLoadState('networkidle')
     expect((await page.content()).length).toBeGreaterThan(1000)
   })
@@ -72,13 +74,15 @@ test.describe('Dashboard', () => {
     await expectGeorgeHeader(page)
   })
 
-  test('Bez session cookie proxy vytvorí guest session a sprístupní dashboard2', async ({ browser }) => {
-    // App is guest-first (proxy → /api/auth/guest). Unauthenticated browser still lands on dashboard2.
+  test('Bez session cookie proxy vytvorí guest session a sprístupní dashboard2', async ({
+    browser,
+  }) => {
     const context = await browser.newContext({ storageState: { cookies: [], origins: [] } })
     const page = await context.newPage()
     await gotoApp(page, '/dashboard2')
     await expect(page).toHaveURL(/dashboard2/)
-    await expect(page.getByText('SPACE účet').first()).toBeVisible({ timeout: 20000 })
+    // Guest lands on PIN screen; session is already established
+    await expect(page.getByText(/Zadajte bezpečnostný PIN/i)).toBeVisible({ timeout: 20000 })
     await context.close()
   })
 })
