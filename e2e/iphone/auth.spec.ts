@@ -16,7 +16,7 @@ test.describe('iPhone – Auth', () => {
   })
 
   test('auth-002: site gate unlocks app on mobile', async ({ page }) => {
-    await page.goto('/dashboard')
+    await page.goto('/dashboard2')
     // Gate may be disabled locally (SITE_GATE_ENABLED=false) – then we land via guest auth.
     if (page.url().includes('/gate')) {
       await expectViewportMeta(page)
@@ -26,12 +26,12 @@ test.describe('iPhone – Auth', () => {
       await expectTapTargetMinSize(submit)
       await passSiteGate(page)
     }
-    await page.waitForURL(/dashboard/, { timeout: 30000 })
+    await page.waitForURL(/dashboard2/, { timeout: 30000 })
   })
 
-  test('auth-003: guest auto-login lands on dashboard', async ({ page }) => {
+  test('auth-003: guest auto-login lands on dashboard2', async ({ page }) => {
     await login(page)
-    await expect(page).toHaveURL(/dashboard/)
+    await expect(page).toHaveURL(/dashboard2/)
     await expect(page.getByText('SPACE účet').first()).toBeVisible({ timeout: 15000 })
     await expectNoHorizontalOverflow(page)
   })
@@ -48,9 +48,9 @@ test.describe('iPhone – Auth', () => {
     await expect(page.getByText(/Zadajte bezpečnostný PIN/i)).toBeVisible({ timeout: 15000 })
   })
 
-  test('auth-006: dashboard after cold navigation has session', async ({ page }) => {
-    await gotoApp(page, '/dashboard')
-    await expect(page).toHaveURL(/dashboard/)
+  test('auth-006: dashboard2 after cold navigation has session', async ({ page }) => {
+    await gotoApp(page, '/dashboard2')
+    await expect(page).toHaveURL(/dashboard2/)
     await expect(page.locator('header').getByRole('button', { name: /Odhlás/i })).toBeVisible({
       timeout: 15000,
     })
@@ -62,13 +62,13 @@ test.describe('iPhone – Auth', () => {
     // After sign-out, middleware may re-guest-login or show gate/sign-in.
     await page.waitForTimeout(2000)
     const url = page.url()
-    const onDashboard = /dashboard/.test(url)
+    const onDashboard = /dashboard2/.test(url)
     const onAuth = /\/(gate|sign-in|api\/auth\/guest)/.test(url)
     expect(onDashboard || onAuth).toBeTruthy()
   })
 
   test('auth-008: no horizontal overflow on entry', async ({ page }) => {
-    await gotoApp(page, '/dashboard')
+    await gotoApp(page, '/dashboard2')
     await expect(page.getByText('SPACE účet').first()).toBeVisible({ timeout: 15000 })
     await expectNoHorizontalOverflow(page)
   })
@@ -78,7 +78,7 @@ test.describe('iPhone – Auth', () => {
     if (page.url().includes('/gate')) {
       await expectViewportMeta(page)
     } else {
-      await gotoApp(page, '/dashboard')
+      await gotoApp(page, '/dashboard2')
       await expectViewportMeta(page)
     }
   })

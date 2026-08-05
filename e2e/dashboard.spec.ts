@@ -9,7 +9,7 @@ import { loginWithPin } from './helpers/dashboard2'
 
 test.describe('Dashboard', () => {
   test('Dashboard je dostupný po prihlásení', async ({ page }) => {
-    await gotoApp(page, '/dashboard')
+    await gotoApp(page, '/dashboard2')
     await expect(page).toHaveURL(/dashboard2/)
     await expect(page).toHaveTitle(/George/i)
   })

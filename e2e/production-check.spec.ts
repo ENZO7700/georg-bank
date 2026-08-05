@@ -71,7 +71,7 @@ test.describe('Production check – george-dev.vercel.app', () => {
   test('potvrdenie o platbe a overenie responzivity na mobile', async ({ page }) => {
     // 1. Prihlásenie
     await login(page)
-    await page.waitForURL('**/dashboard', { timeout: 45000 })
+    await page.waitForURL('**/dashboard2', { timeout: 45000 })
 
     // 2. Kliknutie na odchádzajúcu transakciu v histórii (vyberáme zo zoznamu .divide-y)
     const outgoingTxn = page.locator('section:has-text("História") .divide-y button').filter({ hasText: 'Odoslané' }).first()
