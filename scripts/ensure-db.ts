@@ -254,6 +254,79 @@ async function ensureDemoAccountBalance(pool: Pool) {
   }
 }
 
+/**
+ * Guest session (admin@local.test) powers most Playwright chromium specs.
+ * Without a funded checking account, /dashboardpayment and statement generator
+ * redirect to /dashboard2, and Menu sub-header omits "| €".
+ */
+async function ensureGuestBankAccount(pool: Pool) {
+  if (!(await tableExists(pool, 'bank_account'))) {
+    console.log('[ensure-db] bank_account table missing, skip guest balance seed.')
+    return
+  }
+
+  const { isDedicatedGuestEmail } = await import('../lib/guest-auth')
+  if (!isDedicatedGuestEmail(GUEST_USER_EMAIL)) {
+    console.error(
+      '[ensure-db] Skipping guest bank seed: GUEST_USER_EMAIL must end with @local.test, got:',
+      GUEST_USER_EMAIL
+    )
+    return
+  }
+
+  const SEED_CENTS = 666_000
+  const GUEST_IBAN = 'SK3109000000005012345679'
+  const GUEST_ACCOUNT_ID = 'acc-guest-default'
+
+  const user = await pool.query(`SELECT id FROM "user" WHERE email = $1 LIMIT 1`, [
+    GUEST_USER_EMAIL,
+  ])
+  if (user.rows.length === 0) {
+    console.warn('[ensure-db] Guest user missing; cannot seed bank account.')
+    return
+  }
+
+  const guestUserId = user.rows[0].id as string
+  const existing = await pool.query(
+    `SELECT id, balance, "displayName" FROM "bank_account"
+     WHERE "userId" = $1 AND "accountType" = 'checking' LIMIT 1`,
+    [guestUserId]
+  )
+
+  if (existing.rows.length === 0) {
+    await pool.query(
+      `INSERT INTO "bank_account" (
+         id, "userId", "accountNumber", "displayName", "accountType",
+         balance, currency, "isActive", "createdAt", "updatedAt"
+       ) VALUES ($1, $2, $3, 'SPACE účet', 'checking', $4, 'EUR', true, NOW(), NOW())
+       ON CONFLICT ("accountNumber") DO UPDATE
+         SET "userId" = EXCLUDED."userId",
+             "displayName" = EXCLUDED."displayName",
+             balance = GREATEST("bank_account".balance, EXCLUDED.balance),
+             "updatedAt" = NOW()`,
+      [GUEST_ACCOUNT_ID, guestUserId, GUEST_IBAN, SEED_CENTS]
+    )
+    console.log('[ensure-db] Guest checking account seeded with funded SPACE účet.')
+    return
+  }
+
+  const row = existing.rows[0]
+  const current = Number(row.balance ?? 0)
+  await pool.query(
+    `UPDATE "bank_account"
+     SET balance = GREATEST(balance, $1),
+         "displayName" = COALESCE(NULLIF("displayName", ''), 'SPACE účet'),
+         "updatedAt" = NOW()
+     WHERE id = $2`,
+    [SEED_CENTS, row.id]
+  )
+  if (current < SEED_CENTS) {
+    console.log(`[ensure-db] Guest account topped up ${current} → ≥${SEED_CENTS} cents.`)
+  } else {
+    console.log('[ensure-db] Guest account balance OK.')
+  }
+}
+
 export async function ensureDatabase() {
   const pool = buildPool()
   if (!pool) return
@@ -264,6 +337,7 @@ export async function ensureDatabase() {
     await ensureGuestUser(pool)
     await migrateLegacyDemoUserIds(pool)
     await ensureDemoAccountBalance(pool)
+    await ensureGuestBankAccount(pool)
   } finally {
     await pool.end()
   }

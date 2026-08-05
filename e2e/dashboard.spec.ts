@@ -49,8 +49,9 @@ test.describe('Dashboard', () => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await gotoApp(page, '/dashboard/payment-orders')
     await openDashboardMenu(page)
-    const subHeader = page.locator('text=/SPACE účet \\| €/')
-    await expect(subHeader.first()).toBeVisible()
+    // Guest seed must provide funded checking account → "SPACE účet | € x,xx"
+    const subHeader = page.getByText(/SPACE účet\s*\|\s*€/)
+    await expect(subHeader.first()).toBeVisible({ timeout: 15000 })
     await expect(subHeader.first()).not.toHaveText(/€ 0,85/)
   })
 
