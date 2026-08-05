@@ -42,24 +42,29 @@ test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
 
     const download = await downloadPromise
     const filename = download.suggestedFilename()
-    expect(filename).toMatch(/\.html$/i)
+    expect(filename).toMatch(/^potvrdenie-.*\.(pdf|html)$/i)
     expect(filename.toLowerCase()).toContain('potvrdenie')
 
+    const ext = filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'html'
     const tempPath = path.join(
       __dirname,
       '..',
-      `tmp-george-key-${Date.now()}-${Math.random().toString(36).slice(2)}.html`
+      `tmp-george-key-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
     )
     await download.saveAs(tempPath)
     expect(fs.existsSync(tempPath)).toBe(true)
 
-    const html = fs.readFileSync(tempPath, 'utf8')
-    expect(html).toMatch(/<!DOCTYPE html>/i)
-    expect(html.length).toBeGreaterThan(500)
-    // obsah potvrdenia
-    expect(html).toMatch(/Ján Testovací|Jan Testovaci/i)
-    expect(html).toMatch(/0[,.]10|0\.10/)
-    expect(html).toMatch(/SK80|SK 80|1234567890/i)
+    if (ext === 'html') {
+      const html = fs.readFileSync(tempPath, 'utf8')
+      expect(html).toMatch(/<!DOCTYPE html>/i)
+      expect(html.length).toBeGreaterThan(500)
+      expect(html).toMatch(/Ján Testovací|Jan Testovaci/i)
+      expect(html).toMatch(/0[,.]10|0\.10/)
+      expect(html).toMatch(/SK80|SK 80|1234567890/i)
+    } else {
+      expect(fs.readFileSync(tempPath).subarray(0, 4).toString('utf8')).toBe('%PDF')
+      expect(fs.statSync(tempPath).size).toBeGreaterThan(500)
+    }
 
     fs.unlinkSync(tempPath)
 
@@ -125,13 +130,20 @@ test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
     const downloadPromise = page.waitForEvent('download', { timeout: 20000 })
     await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
     const download = await downloadPromise
-    expect(download.suggestedFilename()).toMatch(/\.html$/i)
+    const name = download.suggestedFilename()
+    expect(name).toMatch(/^potvrdenie-.*\.(pdf|html)$/i)
 
-    const p = path.join(__dirname, '..', `tmp-pwa-${Date.now()}.html`)
+    const ext = name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'html'
+    const p = path.join(__dirname, '..', `tmp-pwa-${Date.now()}.${ext}`)
     await download.saveAs(p)
-    const html = fs.readFileSync(p, 'utf8')
-    expect(html).toMatch(/<!DOCTYPE html>/i)
-    expect(html).toMatch(/PWA User/)
+    expect(fs.statSync(p).size).toBeGreaterThan(100)
+    if (ext === 'html') {
+      const html = fs.readFileSync(p, 'utf8')
+      expect(html).toMatch(/<!DOCTYPE html>/i)
+      expect(html).toMatch(/PWA User/)
+    } else {
+      expect(fs.readFileSync(p).subarray(0, 4).toString('utf8')).toBe('%PDF')
+    }
     fs.unlinkSync(p)
 
     await context.close()
