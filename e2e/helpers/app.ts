@@ -70,8 +70,8 @@ export async function expectGeorgeHeader(page: Page) {
   const isDashboard2Shell =
     path.includes('/dashboard2') || path === '/dashboard' || /\/dashboard\/?$/.test(path)
 
-  // dashboard2: below lg the outer Menu/Odhlásenie chrome is hidden (native full-bleed)
-  if (width < 1024 && isDashboard2Shell) {
+  // dashboard2: full-bleed layout hides outer Menu/Odhlásenie chrome on all viewports
+  if (isDashboard2Shell) {
     const pin = page.getByText(/Zadajte bezpečnostný PIN/i)
     const prehlad = page.getByRole('heading', { name: 'Prehľad', exact: true })
     await expect(pin.or(prehlad).first()).toBeVisible({ timeout: 20000 })
@@ -90,9 +90,10 @@ export async function openDashboardMenu(page: Page) {
   const isDashboard2Shell =
     path.includes('/dashboard2') || path === '/dashboard' || /\/dashboard\/?$/.test(path)
 
-  if (width < 1024 && isDashboard2Shell) {
+  // dashboard2: full-bleed layout hides outer Menu/Odhlásenie chrome on all viewports
+  if (isDashboard2Shell) {
     throw new Error(
-      'openDashboardMenu is unavailable on mobile dashboard2 (full-bleed). Use page.goto for navigation.',
+      'openDashboardMenu is unavailable on dashboard2 (full-bleed). Use page.goto for navigation.',
     )
   }
   await page.locator('header').getByRole('button', { name: /^Menu$/i }).click()
@@ -100,6 +101,18 @@ export async function openDashboardMenu(page: Page) {
 }
 
 export async function openNewPaymentFromMenu(page: Page) {
+  const path = new URL(page.url()).pathname
+  const isDashboard2Shell = path.includes('/dashboard2')
+
+  // On dashboard2, Nová platba button is directly visible (full-bleed layout)
+  if (isDashboard2Shell) {
+    const newPaymentBtn = page.getByRole('button', { name: /^Nová platba$/i }).first()
+    await expect(newPaymentBtn).toBeVisible({ timeout: 10000 })
+    await newPaymentBtn.click()
+    await expect(page.locator('form').first()).toBeVisible({ timeout: 10000 })
+    return
+  }
+
   await openDashboardMenu(page)
   const newPaymentBtn = page.getByRole('button', { name: /^Nová platba$/i }).first()
   await expect(newPaymentBtn).toBeVisible({ timeout: 10000 })
