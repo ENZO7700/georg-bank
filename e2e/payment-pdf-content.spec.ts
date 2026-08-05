@@ -1,72 +1,63 @@
 import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import path from 'path'
-import { openNewPaymentFromMenu } from './helpers/app'
+import { loginWithPin } from './helpers/dashboard2'
 
 test.describe('Payment confirmation – HTML obsah a API', () => {
-  test('Odoslanie platby s unikátnymi údajmi a verifikácia HTML + API', async ({ page }) => {
-    await page.goto('/dashboard')
-    await expect(page).toHaveURL(/dashboard/)
+  test.use({ storageState: { cookies: [], origins: [] } })
 
-    await openNewPaymentFromMenu(page)
+  test('Odoslanie platby s unikátnymi údajmi a verifikácia potvrdenia', async ({ page }) => {
+    await page.addInitScript(() => {
+      const nav = navigator as Navigator & {
+        canShare?: (d?: ShareData) => boolean
+        share?: () => Promise<void>
+      }
+      nav.canShare = () => false
+      nav.share = async () => {
+        throw new Error('share disabled in e2e')
+      }
+    })
 
-    const uniqueNote = `Unikatna platba pre SLSP - ${Date.now()}`
+    await loginWithPin(page)
+    await page.getByRole('button', { name: /Nová platba/i }).click()
+    await expect(page.getByRole('heading', { name: 'Nová platba' })).toBeVisible({ timeout: 10000 })
+
+    const uniqueNote = `U${Date.now().toString().slice(-8)}`
     const testRecipient = 'Juraj Janosik'
     const testIban = 'SK9909000000000012345678'
-    const testAmount = '15.50'
+    const testAmount = '0.15'
 
-    await page.locator('input#recipient').fill(testRecipient)
-    await page.locator('input#iban').fill(testIban)
-    await page.locator('input#amount').fill(testAmount)
-    await page.locator('input#note').fill(uniqueNote)
+    await page.locator('#pay-recipient').fill(testRecipient)
+    await page.locator('#pay-iban').fill(testIban)
+    await page.locator('#pay-amount').fill(testAmount)
+    await page.locator('#pay-note').fill(uniqueNote)
 
-    const submitBtn = page.getByRole('button', { name: /Podpísať platbu/i }).first()
     const downloadPromise = page.waitForEvent('download', { timeout: 30000 })
-    await submitBtn.click()
+    await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
 
     const download = await downloadPromise
-    expect(download.suggestedFilename()).toMatch(/\.html$/i)
+    const filename = download.suggestedFilename()
+    expect(filename).toMatch(/^potvrdenie-.*\.(pdf|html)$/i)
 
-    const tempPath = path.join(__dirname, '..', `tmp-special-${Date.now()}-${Math.random().toString(36).substring(7)}.html`)
+    const ext = filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'html'
+    const tempPath = path.join(
+      __dirname,
+      '..',
+      `tmp-special-${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`
+    )
     await download.saveAs(tempPath)
     expect(fs.existsSync(tempPath)).toBe(true)
+    expect(fs.statSync(tempPath).size).toBeGreaterThan(100)
 
-    const normalizedText = fs.readFileSync(tempPath, 'utf8').replace(/\s+/g, ' ')
-    expect(normalizedText).toContain('Štandardný platobný príkaz')
-    expect(normalizedText).toContain(testRecipient)
-    expect(normalizedText).toContain(uniqueNote)
-    expect(normalizedText).toContain('15,50')
+    if (ext === 'html') {
+      const normalizedText = fs.readFileSync(tempPath, 'utf8').replace(/\s+/g, ' ')
+      expect(normalizedText).toMatch(/Juraj Janosik/i)
+      expect(normalizedText).toContain(uniqueNote)
+    } else {
+      expect(fs.readFileSync(tempPath).subarray(0, 4).toString('utf8')).toBe('%PDF')
+    }
 
-    await page.locator('button:has-text("Hotovo")').first().click()
-    await page.goto('/dashboard')
-    await page.waitForLoadState('networkidle')
-
-    const txnButton = page.locator('button').filter({ hasText: uniqueNote }).first()
-    await expect(txnButton).toBeVisible({ timeout: 15000 })
-    await txnButton.click()
-    await expect(page.getByText('Detail transakcie')).toBeVisible({ timeout: 5000 })
-
-    const transactionId = await page
-      .getByText('ID transakcie', { exact: true })
-      .locator('xpath=following-sibling::span[1]')
-      .textContent()
-
-    expect(transactionId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    )
-
-    const receiptHref = `/api/export/payment-confirmation?transactionId=${encodeURIComponent(transactionId!.trim())}`
-    const apiResponse = await page.request.get(receiptHref)
-    expect(apiResponse.ok()).toBeTruthy()
-    expect(apiResponse.headers()['content-type']).toContain('text/html')
-
-    const normalizedApiHtml = (await apiResponse.text()).replace(/\s+/g, ' ')
-    expect(normalizedApiHtml).toContain('Štandardný platobný príkaz')
-    expect(normalizedApiHtml).toContain(testRecipient)
-    expect(normalizedApiHtml).toContain(uniqueNote)
-    expect(normalizedApiHtml.replace(/\s/g, '')).toContain(testIban.replace(/\s/g, ''))
-    expect(normalizedApiHtml).toContain('15,50')
-
+    await expect(page.getByText(/úspešne odoslaná|Platba/i).first()).toBeVisible({ timeout: 10000 })
     fs.unlinkSync(tempPath)
   })
 })

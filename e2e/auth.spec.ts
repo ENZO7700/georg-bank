@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
-import { gotoApp, login } from './helpers/app'
+import { gotoApp } from './helpers/app'
+import { loginWithPin } from './helpers/dashboard2'
 
 /**
  * Auth flow (current product):
@@ -33,9 +34,9 @@ test.describe('Autentifikácia', () => {
     })
   })
 
-  test('Guest session sprístupní klasický /dashboard', async ({ page }) => {
-    await login(page)
-    await expect(page).toHaveURL(/dashboard/)
+  test('Guest session sprístupní klasický /dashboard2', async ({ page }) => {
+    await loginWithPin(page)
+    await expect(page).toHaveURL(/dashboard2/)
     await expect(page.getByText('SPACE účet').first()).toBeVisible({ timeout: 15000 })
   })
 })
