@@ -73,14 +73,29 @@ export default async function RootLayout({
         <Script id="capacitor-fetch-redirect" strategy="beforeInteractive">
           {`
             if (typeof window !== 'undefined') {
-              // Ak bežíme v Capacitor prostredí, presmerujeme relatívne fetch na host server
+              // Capacitor live-reload (server.url) already serves from http(s) localhost/LAN.
+              // Only remap relative fetch for file:// / capacitor:// shells.
+              // Never force Android 10.0.2.2 on iOS — that caused TypeError: Load failed.
               if (window.Capacitor || navigator.userAgent.includes('Capacitor')) {
                 var originalFetch = window.fetch;
                 window.fetch = function (input, init) {
                   if (typeof input === 'string' && input.startsWith('/')) {
-                    input = 'http://10.0.2.2:3030' + input;
+                    var protocol = window.location.protocol || '';
+                    if (protocol !== 'http:' && protocol !== 'https:') {
+                      var platform =
+                        (window.Capacitor &&
+                          window.Capacitor.getPlatform &&
+                          window.Capacitor.getPlatform()) ||
+                        '';
+                      var isAndroid =
+                        platform === 'android' || /android/i.test(navigator.userAgent || '');
+                      var host = isAndroid
+                        ? 'http://10.0.2.2:3030'
+                        : 'http://localhost:3030';
+                      input = host + input;
+                    }
                   }
-                  return originalFetch(input, init);
+                  return originalFetch.call(this, input, init);
                 };
               }
             }

@@ -74,6 +74,33 @@ export default defineConfig({
     },
     // Modern iPhone suites – shared e2e/iphone/ specs, official Playwright presets
     {
+      name: 'iPhone 15',
+      testMatch: /iphone\/.*\.spec\.ts/,
+      use: {
+        ...devices['iPhone 15'],
+        storageState: 'playwright/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'iPhone 15 Pro',
+      testMatch: /iphone\/.*\.spec\.ts/,
+      use: {
+        ...devices['iPhone 15 Pro'],
+        storageState: 'playwright/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'iPhone 17',
+      testMatch: /iphone\/.*\.spec\.ts/,
+      use: {
+        ...devices['iPhone 17'],
+        storageState: 'playwright/.auth/user.json',
+      },
+      dependencies: ['setup'],
+    },
+    {
       name: 'iPhone 17 Pro',
       testMatch: /iphone\/.*\.spec\.ts/,
       use: {
@@ -86,7 +113,7 @@ export default defineConfig({
       name: 'iPhone Air',
       testMatch: /iphone\/.*\.spec\.ts/,
       use: {
-        // Playwright ships "iPhone Air" (iPhone 17 Air family)
+        // Official preset is "iPhone Air" (iPhone 17 Air family); npm: test:iphone-17-air
         ...devices['iPhone Air'],
         storageState: 'playwright/.auth/user.json',
       },

@@ -74,9 +74,24 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
+# Capacitor server.url points at local Next.js (:3030). Warn if nothing is listening.
+if command -v nc >/dev/null 2>&1; then
+  if ! nc -z 127.0.0.1 3030 >/dev/null 2>&1; then
+    echo "Warning: nothing is listening on :3030." >&2
+    echo "Start the web app first: npm run dev" >&2
+    echo "Continuing anyway — the native shell will launch, but the WebView may stay blank." >&2
+  fi
+fi
+
 echo "Syncing Capacitor iOS..."
-npx cap sync ios
+CAP_BIN="$ROOT/node_modules/.bin/cap"
+if [[ ! -x "$CAP_BIN" ]]; then
+  echo "Error: @capacitor/cli not found (missing $CAP_BIN)." >&2
+  echo "Run: npm install" >&2
+  exit 1
+fi
+"$CAP_BIN" sync ios
 
 echo "Building & launching on $DEVICE_NAME..."
 echo "Tip: keep 'npm run dev' running on http://localhost:3030 so the app can load the web UI."
-npx cap run ios --target "$DEVICE_UDID"
+"$CAP_BIN" run ios --target "$DEVICE_UDID"
