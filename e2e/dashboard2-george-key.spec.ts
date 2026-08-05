@@ -4,9 +4,8 @@ import path from 'path'
 import { loginWithPin } from './helpers/dashboard2'
 
 /**
- * Overenie: po „Autorizovať cez George kľúč“ sa vygeneruje HTML potvrdenie
- * a dá sa stiahnuť v browseri (download event). PWA cesta je overená unit/share mockom
- * v tom istom download helperi + display-mode standalone smoke.
+ * Overenie: po „Autorizovať cez George kľúč“ sa vygeneruje potvrdenie (PDF alebo HTML fallback)
+ * a dá sa stiahnuť v browseri (download event).
  */
 test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
@@ -14,7 +13,10 @@ test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
   async function loginAndOpenPayment(page: import('@playwright/test').Page) {
     // E2E: force classic <a download> path (share sheet is interactive / no download event)
     await page.addInitScript(() => {
-      const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean; share?: () => Promise<void> }
+      const nav = navigator as Navigator & {
+        canShare?: (d?: ShareData) => boolean
+        share?: () => Promise<void>
+      }
       nav.canShare = () => false
       nav.share = async () => {
         throw new Error('share disabled in e2e')
@@ -42,24 +44,29 @@ test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
 
     const download = await downloadPromise
     const filename = download.suggestedFilename()
-    expect(filename).toMatch(/\.html$/i)
+    expect(filename).toMatch(/^potvrdenie-.*\.(pdf|html)$/i)
     expect(filename.toLowerCase()).toContain('potvrdenie')
 
+    const ext = filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'html'
     const tempPath = path.join(
       __dirname,
       '..',
-      `tmp-george-key-${Date.now()}-${Math.random().toString(36).slice(2)}.html`
+      `tmp-george-key-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
     )
     await download.saveAs(tempPath)
     expect(fs.existsSync(tempPath)).toBe(true)
 
-    const html = fs.readFileSync(tempPath, 'utf8')
-    expect(html).toMatch(/<!DOCTYPE html>/i)
-    expect(html.length).toBeGreaterThan(500)
-    // obsah potvrdenia
-    expect(html).toMatch(/Ján Testovací|Jan Testovaci/i)
-    expect(html).toMatch(/0[,.]10|0\.10/)
-    expect(html).toMatch(/SK80|SK 80|1234567890/i)
+    if (ext === 'html') {
+      const html = fs.readFileSync(tempPath, 'utf8')
+      expect(html).toMatch(/<!DOCTYPE html>/i)
+      expect(html.length).toBeGreaterThan(500)
+      expect(html).toMatch(/Ján Testovací|Jan Testovaci/i)
+      expect(html).toMatch(/0[,.]10|0\.10/)
+      expect(html).toMatch(/SK80|SK 80|1234567890/i)
+    } else {
+      expect(fs.readFileSync(tempPath).subarray(0, 4).toString('utf8')).toBe('%PDF')
+      expect(fs.statSync(tempPath).size).toBeGreaterThan(500)
+    }
 
     fs.unlinkSync(tempPath)
 
@@ -68,14 +75,11 @@ test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
   })
 
   test('PWA standalone: autorizácia stále spúšťa HTML download', async ({ browser }) => {
-    // Emulácia display-mode: standalone (ako nainštalovaná PWA)
     const context = await browser.newContext({
       storageState: { cookies: [], origins: [] },
       viewport: { width: 390, height: 844 },
       isMobile: true,
       hasTouch: true,
-      // Playwright can't set display-mode CSS media via context directly in all versions;
-      // inject matchMedia override after load.
     })
     const page = await context.newPage()
 
@@ -100,7 +104,6 @@ test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
 
     await loginWithPin(page)
 
-    // SW registration (PWA shell) – should not block blob downloads
     const swOk = await page.evaluate(async () => {
       if (!('serviceWorker' in navigator)) return true
       try {
@@ -125,13 +128,20 @@ test.describe('dashboard2 – Autorizovať cez George kľúč → HTML', () => {
     const downloadPromise = page.waitForEvent('download', { timeout: 20000 })
     await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
     const download = await downloadPromise
-    expect(download.suggestedFilename()).toMatch(/\.html$/i)
+    const name = download.suggestedFilename()
+    expect(name).toMatch(/^potvrdenie-.*\.(pdf|html)$/i)
 
-    const p = path.join(__dirname, '..', `tmp-pwa-${Date.now()}.html`)
+    const ext = name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'html'
+    const p = path.join(__dirname, '..', `tmp-pwa-${Date.now()}.${ext}`)
     await download.saveAs(p)
-    const html = fs.readFileSync(p, 'utf8')
-    expect(html).toMatch(/<!DOCTYPE html>/i)
-    expect(html).toMatch(/PWA User/)
+    expect(fs.statSync(p).size).toBeGreaterThan(100)
+    if (ext === 'html') {
+      const html = fs.readFileSync(p, 'utf8')
+      expect(html).toMatch(/<!DOCTYPE html>/i)
+      expect(html).toMatch(/PWA User/)
+    } else {
+      expect(fs.readFileSync(p).subarray(0, 4).toString('utf8')).toBe('%PDF')
+    }
     fs.unlinkSync(p)
 
     await context.close()

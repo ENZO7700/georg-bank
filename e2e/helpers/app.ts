@@ -6,11 +6,22 @@ export const TEST_USER_PASSWORD = process.env.TEST_USER_PASSWORD ?? 'admin@admin
 
 export const SWAPPED_CARD_ENDINGS = ['1234', '4321', '4444'] as const
 
+/** Routes that use classic DashboardHeader (Menu / Odhlásenie). */
 export const PROTECTED_DASHBOARD_ROUTES = [
   '/dashboard2',
-  '/dashboard2/payment-orders',
-  '/dashboard2/assistant',
+  '/dashboard/payment-orders',
+  '/dashboard/assistant',
 ] as const
+
+/** Full-bleed dashboard2 (or legacy /dashboard redirect target) — no outer Menu chrome. */
+function isDashboard2FullBleed(pathname: string) {
+  return (
+    pathname === '/dashboard2' ||
+    pathname.startsWith('/dashboard2?') ||
+    pathname === '/dashboard' ||
+    pathname === '/dashboard/'
+  )
+}
 
 /** Prejde site gate ak je aktívny (produkcia / lokálny dev s gate). */
 export async function passSiteGate(page: Page) {
@@ -65,13 +76,10 @@ export async function login(page: Page) {
 }
 
 export async function expectGeorgeHeader(page: Page) {
-  const width = page.viewportSize()?.width ?? 1280
   const path = new URL(page.url()).pathname
-  const isDashboard2Shell =
-    path.includes('/dashboard2') || path === '/dashboard' || /\/dashboard\/?$/.test(path)
 
-  // dashboard2: below lg the outer Menu/Odhlásenie chrome is hidden (native full-bleed)
-  if (width < 1024 && isDashboard2Shell) {
+  // dashboard2 full-bleed: no outer Menu/Odhlásenie chrome
+  if (isDashboard2FullBleed(path)) {
     const pin = page.getByText(/Zadajte bezpečnostný PIN/i)
     const prehlad = page.getByRole('heading', { name: 'Prehľad', exact: true })
     await expect(pin.or(prehlad).first()).toBeVisible({ timeout: 20000 })
@@ -85,39 +93,44 @@ export async function expectGeorgeHeader(page: Page) {
 }
 
 export async function openDashboardMenu(page: Page) {
-  const width = page.viewportSize()?.width ?? 1280
   const path = new URL(page.url()).pathname
-  const isDashboard2Shell =
-    path.includes('/dashboard2') || path === '/dashboard' || /\/dashboard\/?$/.test(path)
 
-  if (width < 1024 && isDashboard2Shell) {
-    // Mobile/full-bleed layout: try a mobile-friendly menu first, otherwise fall back to safe navigation.
-    const menuBtn = page.getByRole('button', { name: /^Menu$/i }).first()
-    if (await menuBtn.isVisible().catch(() => false)) {
-      await menuBtn.click()
-      await expect(page.getByRole('button', { name: /^História$/i }).first()).toBeVisible({
-        timeout: 10000,
-      })
-      return
-    }
-    // As a robust fallback, navigate to dashboard2 (mobile UI should expose the new-payment CTA).
-    await page.goto('/dashboard2', { waitUntil: 'domcontentloaded' })
-    await page.waitForURL(/dashboard2/, { timeout: 15000 })
-    // continue — caller will try to click the New Payment button
+  if (isDashboard2FullBleed(path)) {
+    throw new Error(
+      'openDashboardMenu is unavailable on dashboard2 full-bleed. Use page.goto or in-page CTAs.',
+    )
   }
+
   await page.locator('header').getByRole('button', { name: /^Menu$/i }).click()
-  await expect(page.getByRole('button', { name: /^História$/i }).first()).toBeVisible({ timeout: 10000 })
+  await expect(page.getByRole('button', { name: /^História$/i }).first()).toBeVisible({
+    timeout: 10000,
+  })
 }
 
 export async function openNewPaymentFromMenu(page: Page) {
-  // openDashboardMenu may now navigate or click; tolerate failures and try a safe fallback.
-  try {
-    await openDashboardMenu(page)
-  } catch (err) {
-    // If something unexpected happens, navigate to dashboard2 and continue.
-    await page.goto('/dashboard2', { waitUntil: 'domcontentloaded' })
-    await page.waitForURL(/dashboard2/, { timeout: 15000 })
+  const path = new URL(page.url()).pathname
+
+  // On dashboard2 full-bleed: unlock PIN if needed, then use in-page CTA
+  if (isDashboard2FullBleed(path)) {
+    const pinHeading = page.getByText(/Zadajte bezpečnostný PIN/i)
+    if (await pinHeading.isVisible().catch(() => false)) {
+      for (const digit of '666666') {
+        await page.getByRole('button', { name: digit, exact: true }).click()
+      }
+      await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible({
+        timeout: 15000,
+      })
+    }
+    const newPaymentBtn = page.getByRole('button', { name: /^Nová platba$/i }).first()
+    await expect(newPaymentBtn).toBeVisible({ timeout: 10000 })
+    await newPaymentBtn.click()
+    await expect(page.getByRole('heading', { name: 'Nová platba' }).or(page.locator('form').first())).toBeVisible({
+      timeout: 10000,
+    })
+    return
   }
+
+  await openDashboardMenu(page)
   const newPaymentBtn = page.getByRole('button', { name: /^Nová platba$/i }).first()
   await expect(newPaymentBtn).toBeVisible({ timeout: 10000 })
   await newPaymentBtn.click()
