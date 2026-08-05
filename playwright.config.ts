@@ -59,6 +59,9 @@ export default defineConfig({
       testIgnore: mobileFolderIgnore,
       use: {
         ...devices['Desktop Chrome'],
+        // Ensure CI runs Chromium in a desktop-sized viewport so desktop-only helpers work.
+        // This prevents openDashboardMenu from detecting a "mobile" width and throwing.
+        viewport: { width: 1280, height: 800 },
         storageState: 'playwright/.auth/user.json',
       },
       dependencies: ['setup'],
@@ -75,7 +78,7 @@ export default defineConfig({
     // Modern iPhone suites – shared e2e/iphone/ specs, official Playwright presets
     {
       name: 'iPhone 15',
-      testMatch: /iphone\/.*\.spec\.ts/,
+      testMatch: /iphone\/.*/.spec.ts/,
       use: {
         ...devices['iPhone 15'],
         storageState: 'playwright/.auth/user.json',
@@ -84,7 +87,7 @@ export default defineConfig({
     },
     {
       name: 'iPhone 15 Pro',
-      testMatch: /iphone\/.*\.spec\.ts/,
+      testMatch: /iphone\/.*/.spec.ts/,
       use: {
         ...devices['iPhone 15 Pro'],
         storageState: 'playwright/.auth/user.json',
@@ -93,7 +96,7 @@ export default defineConfig({
     },
     {
       name: 'iPhone 17',
-      testMatch: /iphone\/.*\.spec\.ts/,
+      testMatch: /iphone\/.*/.spec.ts/,
       use: {
         ...devices['iPhone 17'],
         storageState: 'playwright/.auth/user.json',
@@ -102,7 +105,7 @@ export default defineConfig({
     },
     {
       name: 'iPhone 17 Pro',
-      testMatch: /iphone\/.*\.spec\.ts/,
+      testMatch: /iphone\/.*/.spec.ts/,
       use: {
         ...devices['iPhone 17 Pro'],
         storageState: 'playwright/.auth/user.json',
@@ -111,7 +114,7 @@ export default defineConfig({
     },
     {
       name: 'iPhone Air',
-      testMatch: /iphone\/.*\.spec\.ts/,
+      testMatch: /iphone\/.*/.spec.ts/,
       use: {
         // Official preset is "iPhone Air" (iPhone 17 Air family); npm: test:iphone-17-air
         ...devices['iPhone Air'],
@@ -122,7 +125,7 @@ export default defineConfig({
     // Legacy – excluded from npm run test:iphone; still runnable via --project
     {
       name: 'iPhone 14 Plus',
-      testMatch: /iphone-14-plus\/.*\.spec\.ts/,
+      testMatch: /iphone-14-plus\/.*/.spec.ts/,
       use: {
         ...devices['iPhone 14 Plus'],
         storageState: 'playwright/.auth/user.json',
@@ -131,7 +134,7 @@ export default defineConfig({
     },
     {
       name: 'Nothing Phone 1',
-      testMatch: /nothing-phone-1\/.*\.spec\.ts/,
+      testMatch: /nothing-phone-1\/.*/.spec.ts/,
       use: {
         ...nothingPhone1,
         storageState: { cookies: [], origins: [] },
