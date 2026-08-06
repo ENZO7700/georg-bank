@@ -1,3 +1,18 @@
+import fs from 'fs'
+import path from 'path'
+import { computeStatementTax, resolveTransactionFeeCents } from '@/lib/statement-tax'
+import {
+  StatementPdfValidationError,
+  validateAccountingPeriod,
+  validateStatementDate,
+  validateStatementNumber,
+} from '@/lib/statement-pdf-profile'
+import {
+  buildSlspBankBlockHtml,
+  buildSlspFooterHtml,
+  buildSlspLegalNoticeHtml,
+} from '@/lib/slsp-statement-assets'
+
 export interface TransactionRow {
   id: string
   date: string
@@ -5,6 +20,7 @@ export interface TransactionRow {
   description: string | null
   amount: number
   balanceAfter: number | null
+  feeCents?: number
 }
 
 export interface TransactionTaxLine {
@@ -17,11 +33,11 @@ export interface TransactionsPdfInput {
   accountName: string
   accountNumber: string
   currency: string
-  accountProductType?: string
-  holderAddressLines?: string[]
+  accountProductType: string
+  holderAddressLines: string[]
   statementDate: string
   accountingPeriod: string
-  statementNumber?: string
+  statementNumber: string
   transactions: TransactionRow[]
   initialBalance: number
   finalBalance: number
@@ -29,11 +45,9 @@ export interface TransactionsPdfInput {
   withdrawalsTotal: number
   transactionTaxTotalCents?: number
   transactionTaxLines?: TransactionTaxLine[]
-  /** @deprecated Prefer statementDate + accountingPeriod */
-  dateCreated?: string
 }
 
-function formatBalance(valCents: number): string {
+export function formatBalance(valCents: number): string {
   const val = valCents / 100
   return val.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
 }
@@ -84,50 +98,32 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;')
 }
 
-function normalizePdfInput(data: TransactionsPdfInput): Required<
-  Pick<
-    TransactionsPdfInput,
-    | 'accountProductType'
-    | 'holderAddressLines'
-    | 'statementDate'
-    | 'accountingPeriod'
-    | 'statementNumber'
-    | 'transactionTaxTotalCents'
-    | 'transactionTaxLines'
-  >
-> {
-  const statementDate = data.statementDate || data.dateCreated || ''
-  const accountingPeriod = data.accountingPeriod || statementDate
-  const statementNumber =
-    data.statementNumber ||
-    (() => {
-      const match = accountingPeriod.match(/(\d{2})\.\s*(\d{2})\.\s*(\d{4})\s*-\s*(\d{2})\.\s*(\d{2})\.\s*(\d{4})/)
-      if (match) {
-        const month = Number(match[5])
-        const year = match[6]
-        return `${month}/${year}`
-      }
-      return '1/2026'
-    })()
+function validatePdfInput(data: TransactionsPdfInput) {
+  validateStatementDate(data.statementDate)
+  validateAccountingPeriod(data.accountingPeriod)
+  validateStatementNumber(data.statementNumber)
 
-  const taxLines = data.transactionTaxLines ?? []
-  const taxTotal =
-    data.transactionTaxTotalCents ??
-    (taxLines.length > 0
-      ? taxLines.reduce((sum, line) => sum + line.amountCents, 0)
-      : 0)
-
-  return {
-    accountProductType: data.accountProductType || 'Business účet S',
-    holderAddressLines: data.holderAddressLines?.length
-      ? data.holderAddressLines
-      : [],
-    statementDate,
-    accountingPeriod,
-    statementNumber,
-    transactionTaxTotalCents: taxTotal,
-    transactionTaxLines: taxLines,
+  if (!data.holderAddressLines.length) {
+    throw new StatementPdfValidationError('Adresa klienta musí obsahovať aspoň jeden riadok.')
   }
+}
+
+function resolveTax(data: TransactionsPdfInput) {
+  if (data.transactionTaxLines && data.transactionTaxTotalCents !== undefined) {
+    return {
+      totalCents: data.transactionTaxTotalCents,
+      lines: data.transactionTaxLines,
+    }
+  }
+
+  if (data.transactionTaxLines) {
+    return {
+      totalCents: data.transactionTaxLines.reduce((sum, line) => sum + line.amountCents, 0),
+      lines: data.transactionTaxLines,
+    }
+  }
+
+  return computeStatementTax(data.transactions)
 }
 
 function buildTransactionDescription(txn: TransactionRow) {
@@ -167,6 +163,8 @@ function buildTransactionDescription(txn: TransactionRow) {
 function buildTransactionRowHtml(txn: TransactionRow): string {
   const { name, note, isDeposit } = buildTransactionDescription(txn)
   const amountStr = (isDeposit ? '' : '- ') + formatBalance(txn.amount)
+  const feeCents = resolveTransactionFeeCents(txn)
+  const feeStr = feeCents > 0 ? formatBalance(feeCents) : '0,00'
 
   return `
         <div class="transaction-row">
@@ -177,13 +175,11 @@ function buildTransactionRowHtml(txn: TransactionRow): string {
             ${note ? `<span class="popis-subtext">${escapeHtml(note)}</span>` : ''}
           </div>
           <div class="body-cell cell-right">${amountStr}</div>
-          <div class="body-cell cell-right">0,00</div>
+          <div class="body-cell cell-right">${feeStr}</div>
         </div>`
 }
 
 function buildDetailsBox(data: TransactionsPdfInput, formattedIban: string, bic: string) {
-  const normalized = normalizePdfInput(data)
-
   return `
     <div class="details-box">
       <div class="details-col">
@@ -210,14 +206,14 @@ function buildDetailsBox(data: TransactionsPdfInput, formattedIban: string, bic:
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Dátum vyhotovenia výpisu</span>
-          <span class="value value-right">${escapeHtml(normalized.statementDate)}</span>
+          <span class="value value-right">${escapeHtml(data.statementDate)}</span>
         </div>
       </div>
       <div class="details-col">
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Účtovné obdobie</span>
-          <span class="value">${escapeHtml(normalized.accountingPeriod)}</span>
+          <span class="value">${escapeHtml(data.accountingPeriod)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
@@ -273,10 +269,8 @@ function buildTaxBreakdownHtml(lines: TransactionTaxLine[]) {
     </div>`
 }
 
-function buildHolderAddressHtml(accountName: string, lines: string[]) {
-  const addressLines =
-    lines.length > 0 ? lines : [accountName]
-  return addressLines.map((line) => `<div>${escapeHtml(line)}</div>`).join('')
+function buildHolderAddressHtml(lines: string[]) {
+  return lines.map((line) => `<div>${escapeHtml(line)}</div>`).join('')
 }
 
 const TABLE_HEADER_HTML = `
@@ -288,32 +282,17 @@ const TABLE_HEADER_HTML = `
         <div class="header-cell cell-right">Suma<br>poplatku</div>
       </div>`
 
-const FOOTER_HTML = `
-    <div class="footer">
-      <div class="footer-item">info@slsp.sk</div>
-      <div class="footer-item">Klientske centrum: 0850 111 888</div>
-      <div class="footer-item">www.slsp.sk</div>
-    </div>`
-
-const LEGAL_NOTICE_HTML = `
-    <div class="legal-notice">
-      Vklad podliehajúci ochrane vkladov v súlade so zákonom. Viac informácií získate v Informačnom formulári
-      pre vkladateľa, ktorý Vám bol doručený alebo odovzdaný.
-    </div>`
-
-const BANK_BLOCK_HTML = `
-      <div class="bank-block">
-        Slovenská sporiteľňa, a.s.<br>
-        Tomášikova 48, 832 37 Bratislava<br>
-        IČO 00 151 653, zapísaná v Obchodnom registri<br>
-        Mestského súdu Bratislava III., oddiel Sa, vložka č. 601/B
-      </div>`
+function loadStatementCss(): string {
+  const cssPath = path.join(process.cwd(), 'styles/slsp-statement.css')
+  return fs.readFileSync(cssPath, 'utf8')
+}
 
 export async function generateTransactionsPdf(data: TransactionsPdfInput): Promise<string> {
-  const normalized = normalizePdfInput(data)
+  validatePdfInput(data)
+
+  const tax = resolveTax(data)
   const formattedSenderIban = formatIban(data.accountNumber)
   const bic = getBicFromIban(data.accountNumber)
-
   const rowHtmlList = data.transactions.map(buildTransactionRowHtml)
 
   const ROWS_PAGE_1 = 12
@@ -341,7 +320,7 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
     const boxHeight = isFirstPage ? PAGE1_BOX_HEIGHT : CONTINUATION_BOX_HEIGHT
     const pageNumber = pageIdx + 1
     const totalPages = pages.length
-    const pageMeta = `č.${normalized.statementNumber} - Strana ${pageNumber}/${totalPages}`
+    const pageMeta = `č.${data.statementNumber} - Strana ${pageNumber}/${totalPages}`
 
     const emptyRowsHtml =
       pageRows.length === 0
@@ -352,17 +331,17 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
       ? `
     <div class="tax-total-row">
       <span class="tax-total-label">Transakčná daň spolu:</span>
-      <span class="tax-total-value">${formatSignedBalance(-Math.abs(normalized.transactionTaxTotalCents))} EUR</span>
+      <span class="tax-total-value">${formatSignedBalance(-Math.abs(tax.totalCents))} EUR</span>
     </div>`
       : ''
 
     const detailsHtml = isFirstPage ? buildDetailsBox(data, formattedSenderIban, bic) : ''
     const titleHtml = isFirstPage
-      ? `<div class="document-title">Výpis z Účtu: ${escapeHtml(normalized.accountProductType)}</div>`
+      ? `<div class="document-title">Výpis z Účtu: ${escapeHtml(data.accountProductType)}</div>`
       : ''
     const headerAddressHtml = isFirstPage
-      ? `<div class="holder-address">${buildHolderAddressHtml(data.accountName, normalized.holderAddressLines)}</div>`
-      : `<div class="holder-address continuation-account">${formattedSenderIban} · ${escapeHtml(data.currency)} · ${escapeHtml(normalized.accountingPeriod)}</div>`
+      ? `<div class="holder-address">${buildHolderAddressHtml(data.holderAddressLines)}</div>`
+      : `<div class="holder-address continuation-account">${formattedSenderIban} · ${escapeHtml(data.currency)} · ${escapeHtml(data.accountingPeriod)}</div>`
 
     pagesHtml += `
   <div class="page-viewport">
@@ -370,7 +349,7 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
       <div class="page-meta">${pageMeta}</div>
 
       <div class="header-row">
-        ${isFirstPage ? BANK_BLOCK_HTML : `<div class="bank-block bank-block-compact">Slovenská sporiteľňa, a.s.</div>`}
+        ${buildSlspBankBlockHtml(!isFirstPage)}
         ${headerAddressHtml}
       </div>
 
@@ -385,9 +364,9 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
         </div>
       </div>
 
-      ${isFirstPage ? buildTaxBreakdownHtml(normalized.transactionTaxLines) : ''}
-      ${isFirstPage ? LEGAL_NOTICE_HTML : ''}
-      ${FOOTER_HTML}
+      ${isFirstPage ? buildTaxBreakdownHtml(tax.lines) : ''}
+      ${isFirstPage ? buildSlspLegalNoticeHtml() : ''}
+      ${buildSlspFooterHtml()}
     </div>
   </div>`
   }
@@ -398,231 +377,7 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Výpis z účtu</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background-color: #f0f2f5;
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
-      font-family: Arial, Helvetica, sans-serif;
-      color: #1a1919;
-      gap: 40px;
-      padding: 40px 20px;
-      overflow-x: auto;
-    }
-    .page-viewport {
-      width: 100%;
-      max-width: 876px;
-      aspect-ratio: 876 / 1199;
-      container-type: inline-size;
-      margin: 0 auto;
-      position: relative;
-      flex-shrink: 0;
-      page-break-after: always;
-    }
-    .page {
-      width: 876px;
-      height: 1199px;
-      background-color: #ffffff;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-      position: absolute;
-      top: 0;
-      left: 0;
-      padding: 48px 58px 40px 68px;
-      display: flex;
-      flex-direction: column;
-      transform-origin: top left;
-      transform: scale(calc(100cqw / 876));
-    }
-    .page-meta {
-      text-align: right;
-      font-size: 11px;
-      font-weight: 700;
-      margin-bottom: 18px;
-    }
-    .header-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-      margin-bottom: 18px;
-      align-items: start;
-    }
-    .bank-block {
-      font-size: 9.5px;
-      line-height: 1.45;
-      font-weight: 500;
-    }
-    .bank-block-compact {
-      font-size: 11px;
-      font-weight: 700;
-      padding-top: 8px;
-    }
-    .holder-address {
-      text-align: right;
-      font-size: 11px;
-      line-height: 1.45;
-      font-weight: 500;
-    }
-    .continuation-account {
-      font-size: 10px;
-      font-weight: 700;
-    }
-    .document-title {
-      font-size: 19px;
-      font-weight: 700;
-      margin-bottom: 10px;
-    }
-    .details-box {
-      background-color: #d4e0e2;
-      border-radius: 6px;
-      padding: 10px 14px 12px;
-      display: grid;
-      grid-template-columns: 1.08fr 1fr;
-      gap: 28px;
-      margin-bottom: 12px;
-    }
-    .details-col {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .details-row {
-      display: flex;
-      align-items: center;
-      border-bottom: 1.5px solid #8a9fac;
-      min-height: 20px;
-      padding-bottom: 2px;
-    }
-    .details-row.row-large { min-height: 24px; }
-    .marker {
-      width: 10px;
-      height: 10px;
-      background-color: #536f85;
-      border-radius: 50%;
-      margin-right: 6px;
-      flex-shrink: 0;
-    }
-    .label {
-      font-size: 11px;
-      font-weight: 700;
-    }
-    .value {
-      font-size: 11px;
-      font-weight: 700;
-      margin-left: auto;
-      text-align: right;
-    }
-    .value-large {
-      font-size: 16px;
-      font-weight: 900;
-    }
-    .value-right { margin-left: auto; }
-    .tax-total-row {
-      display: flex;
-      justify-content: flex-end;
-      align-items: baseline;
-      gap: 12px;
-      margin: 8px 0 14px;
-      font-size: 11px;
-      font-weight: 700;
-    }
-    .tax-total-value { min-width: 120px; text-align: right; }
-    .table-container { margin-bottom: 16px; }
-    .table-header {
-      background-color: #d4e0e2;
-      border: 1px solid #4e4f4f;
-      border-top-left-radius: 8px;
-      border-top-right-radius: 8px;
-      height: 37px;
-      display: grid;
-      grid-template-columns: 85px 95px 1fr 95px 80px;
-      align-items: center;
-      padding: 0 12px;
-      margin-bottom: 8px;
-      gap: 8px;
-    }
-    .header-cell {
-      font-size: 10px;
-      font-weight: 800;
-      line-height: 1.1;
-    }
-    .cell-left { text-align: left; }
-    .cell-right { text-align: right; }
-    .transaction-box {
-      border: 1px solid #4e4f4f;
-      border-radius: 8px;
-      padding: 12px;
-      background-color: #ffffff;
-    }
-    .transaction-row {
-      display: grid;
-      grid-template-columns: 85px 95px 1fr 95px 80px;
-      align-items: start;
-      gap: 8px;
-      margin-bottom: 12px;
-      page-break-inside: avoid;
-    }
-    .body-cell {
-      font-size: 12px;
-      line-height: 1.25;
-      word-break: break-word;
-    }
-    .popis-cell { display: flex; flex-direction: column; }
-    .popis-title { font-weight: 700; margin-bottom: 2px; }
-    .popis-subtext { font-size: 11px; font-weight: 400; }
-    .empty-rows {
-      text-align: center;
-      font-size: 14px;
-      padding: 20px 0;
-      color: #1a1919;
-    }
-    .tax-breakdown {
-      margin-bottom: 14px;
-      font-size: 11px;
-    }
-    .tax-breakdown-title {
-      font-weight: 700;
-      margin-bottom: 6px;
-    }
-    .tax-breakdown-row {
-      display: grid;
-      grid-template-columns: 1fr auto auto;
-      gap: 12px;
-      margin-bottom: 4px;
-    }
-    .tax-label { font-weight: 500; }
-    .tax-amount { font-weight: 700; text-align: right; min-width: 90px; }
-    .tax-count { font-weight: 500; min-width: 48px; }
-    .legal-notice {
-      font-size: 9.5px;
-      line-height: 1.45;
-      margin-bottom: 18px;
-      max-width: 92%;
-    }
-    .footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: auto;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .footer-item {
-      font-size: 11px;
-      font-weight: 700;
-    }
-    @media print {
-      body { background-color: #ffffff; gap: 0; padding: 0; overflow-x: visible; }
-      .page-viewport { aspect-ratio: auto; width: 876px; height: 1199px; }
-      .page {
-        position: relative;
-        transform: none !important;
-        box-shadow: none;
-        margin: 0 !important;
-      }
-    }
-  </style>
+  <style>${loadStatementCss()}</style>
 </head>
 <body>
   ${pagesHtml}

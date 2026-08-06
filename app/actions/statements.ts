@@ -11,6 +11,7 @@ import {
   type StatementMix,
   toPersistableTransactions,
 } from '@/lib/statement-generator'
+import { buildStatementAccountFields } from '@/lib/statement-pdf-profile'
 import {
   formatSlspAccountingPeriod,
   formatSlspStatementDate,
@@ -127,8 +128,13 @@ export async function generateBulkStatementsAction(
 
   return Promise.all(
     statements.map(async (statement) => {
+      const profile = buildStatementAccountFields({
+        ...account,
+        displayName,
+      })
+
       const html = await generateTransactionsPdf({
-        accountName: displayName,
+        ...profile,
         accountNumber: account.accountNumber,
         currency: account.currency || 'EUR',
         statementDate: formatSlspStatementDate(statement.periodEnd.toISOString()),

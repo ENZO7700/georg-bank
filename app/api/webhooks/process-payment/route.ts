@@ -7,7 +7,11 @@ import { db } from '@/lib/db'
 import { transaction } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { generateTransactionsPdf } from '@/lib/generate-transactions-pdf'
-import { formatSlspStatementDate, formatSlspStatementNumber } from '@/lib/format-date'
+import { buildStatementAccountFields } from '@/lib/statement-pdf-profile'
+import {
+  formatSlspStatementDate,
+  formatSlspStatementNumber,
+} from '@/lib/format-date'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 // Configure Web Push with VAPID keys from env
@@ -52,20 +56,24 @@ export async function POST(req: Request) {
       where: (table, { eq }) => eq(table.id, txnRecord.userId)
     })
 
-    // Prepare inputs for the SLSP PDF generator
-    const dateFormatted = txnRecord.createdAt.toLocaleDateString('sk-SK', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      timeZone: 'Europe/Bratislava',
-    }).replace(/\s/g, ' ')
+    if (!fromAccount) {
+      console.error(`[Worker] Missing fromAccount for transaction ${transactionId}.`)
+      return NextResponse.json({ success: false, error: 'Sender account not found' }, { status: 404 })
+    }
+
+    const profile = buildStatementAccountFields({
+      ...fromAccount,
+      displayName: fromAccount.displayName || senderUser?.name || 'Klient',
+    })
+
+    const dateFormatted = formatSlspStatementDate(txnRecord.createdAt.toISOString())
     const amountVal = txnRecord.amount
-    const statementDate = formatSlspStatementDate(txnRecord.createdAt.toISOString())
+    const statementDate = dateFormatted
 
     const pdfInput = {
-      accountName: senderUser?.name || 'Klient',
-      accountNumber: fromAccount?.accountNumber || '',
-      currency: fromAccount?.currency || 'EUR',
+      ...profile,
+      accountNumber: fromAccount.accountNumber,
+      currency: fromAccount.currency || 'EUR',
       statementDate,
       accountingPeriod: `${statementDate} - ${statementDate}`,
       statementNumber: formatSlspStatementNumber(txnRecord.createdAt.toISOString()),

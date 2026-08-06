@@ -32,8 +32,34 @@ HTML generátor: `lib/generate-transactions-pdf.ts`
 | Vklady spolu | `depositsTotal` | centy |
 | Výbery spolu | `withdrawalsTotal` | centy (so znamienkom `-`) |
 | Konečný stav Účtu | `finalBalance` | centy |
-| Typ produktu | `accountProductType` | default `Business účet S` |
-| Adresa klienta | `holderAddressLines[]` | voliteľné riadky pod menom |
+| Typ produktu | `accountProductType` | `bankAccount.productLabel` alebo mapovanie z `accountType` |
+| Adresa klienta | `holderAddressLines[]` | **povinné** z `holderAddressLine1–3` + `displayName` |
+
+## DB stĺpce (`bank_account`)
+
+| Stĺpec | Účel |
+|--------|------|
+| `productLabel` | napr. `Business účet S` |
+| `holderAddressLine1` | ulica (povinné pre PDF) |
+| `holderAddressLine2` | PSČ + mesto (povinné pre PDF) |
+| `holderAddressLine3` | voliteľný riadok |
+
+Migrácia: `drizzle/0002_bank_account_statement_profile.sql`
+
+## Transakčná daň (auto)
+
+- `lib/statement-tax.ts` — 0,40 % z odchádzajúcich platieb + 20 % z bankového poplatku
+- Poplatok riadku: `TransactionRow.feeCents` alebo index `[5]` v pipe `description`
+
+## CSS
+
+Externý súbor: `styles/slsp-statement.css` (modrá `#003366`, tabuľka `#cccccc`, A4 padding `20mm`)
+
+## Validácie
+
+- `holderAddressLine1` musí existovať v DB (inak `StatementPdfValidationError`)
+- `accountingPeriod`: `DD. MM. YYYY - DD. MM. YYYY`
+- `statementNumber`: `N/YYYY`
 | č.N/YYYY | `statementNumber` | mesiac výpisu, napr. `3/2026` |
 | Transakčná daň spolu | `transactionTaxTotalCents` | voliteľné, default 0 |
 | Riadok dane | `transactionTaxLines[]` | `{ label, amountCents, count }` |

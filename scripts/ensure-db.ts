@@ -1,7 +1,12 @@
 import fs from 'fs'
 import path from 'path'
+import { config as loadEnv } from 'dotenv'
 import { Pool } from 'pg'
 import { resolveDatabaseUrl } from '../lib/db/resolve-database-url'
+
+// `npm run build` runs this before Next.js loads .env.local
+loadEnv({ path: '.env.local' })
+
 import {
   DEMO_DEFAULT_USER_EMAIL,
   DEMO_DEFAULT_USER_ID,
@@ -73,7 +78,39 @@ async function ensureSchema(pool: Pool) {
     await applySqlFile(pool, migrationPath)
   }
 
+  const statementProfileMigration = path.join(
+    process.cwd(),
+    'drizzle',
+    '0002_bank_account_statement_profile.sql'
+  )
+  if (fs.existsSync(statementProfileMigration)) {
+    await applySqlFile(pool, statementProfileMigration)
+  }
+
   console.log('[ensure-db] Schema applied.')
+}
+
+async function ensureStatementProfileColumns(pool: Pool) {
+  if (!(await tableExists(pool, 'bank_account'))) return
+
+  const statementProfileMigration = path.join(
+    process.cwd(),
+    'drizzle',
+    '0002_bank_account_statement_profile.sql'
+  )
+  if (fs.existsSync(statementProfileMigration)) {
+    await applySqlFile(pool, statementProfileMigration)
+  }
+
+  await pool.query(`
+    UPDATE "bank_account"
+    SET
+      "productLabel" = COALESCE("productLabel", 'Business účet S'),
+      "holderAddressLine1" = COALESCE("holderAddressLine1", 'Tomášikova 12'),
+      "holderAddressLine2" = COALESCE("holderAddressLine2", '831 04 Bratislava'),
+      "updatedAt" = NOW()
+    WHERE "holderAddressLine1" IS NULL OR "holderAddressLine2" IS NULL
+  `)
 }
 
 async function ensureGuestUser(pool: Pool) {
@@ -334,6 +371,7 @@ export async function ensureDatabase() {
   try {
     await pool.query('SELECT 1')
     await ensureSchema(pool)
+    await ensureStatementProfileColumns(pool)
     await ensureGuestUser(pool)
     await migrateLegacyDemoUserIds(pool)
     await ensureDemoAccountBalance(pool)

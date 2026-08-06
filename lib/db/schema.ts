@@ -86,6 +86,10 @@ export const bankAccount = pgTable(
     userId: text('userId').notNull(),
     accountNumber: text('accountNumber').notNull().unique(),
     displayName: text('displayName'),
+    productLabel: text('productLabel'),
+    holderAddressLine1: text('holderAddressLine1'),
+    holderAddressLine2: text('holderAddressLine2'),
+    holderAddressLine3: text('holderAddressLine3'),
     accountType: text('accountType').notNull(), // 'checking', 'savings'
     balance: integer('balance').notNull().default(0),
     currency: text('currency').notNull().default('USD'),

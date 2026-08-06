@@ -5,6 +5,7 @@ import { bankAccount, transaction } from '@/lib/db/schema'
 import { and, eq, or, desc, gte, lt } from 'drizzle-orm'
 import { generateTransactionsPdf, TransactionRow } from '@/lib/generate-transactions-pdf'
 import { getMonthUtcRange } from '@/lib/month-range'
+import { buildStatementAccountFields } from '@/lib/statement-pdf-profile'
 import {
   formatSlspAccountingPeriod,
   formatSlspStatementDate,
@@ -86,12 +87,7 @@ export async function GET(req: Request) {
 
       return {
         id: t.id,
-        date: t.createdAt.toLocaleDateString('sk-SK', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          timeZone: 'Europe/Bratislava',
-        }).replace(/\s/g, ''),
+        date: formatSlspStatementDate(t.createdAt.toISOString()),
         type: t.type,
         description: t.description,
         amount: t.amount,
@@ -127,8 +123,13 @@ export async function GET(req: Request) {
       periodEnd = new Date(monthRange.end.getTime() - 1)
     }
 
+    const profile = buildStatementAccountFields({
+      ...currentAccount,
+      displayName: currentAccount.displayName || session.user.name || 'Užívateľ',
+    })
+
     const pdfData = {
-      accountName: currentAccount.displayName || session.user.name || 'Užívateľ',
+      ...profile,
       accountNumber: currentAccount.accountNumber,
       currency: currentAccount.currency || 'EUR',
       statementDate: formatSlspStatementDate(periodEnd),
