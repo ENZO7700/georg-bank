@@ -126,8 +126,52 @@ function resolveTax(data: TransactionsPdfInput) {
   return computeStatementTax(data.transactions)
 }
 
+export function parseStatementPaymentDescription(description: string | null) {
+  if (!description?.includes('|')) return null
+
+  const parts = description.split('|').map((part) => part.trim())
+  const recipientName = parts[0] || ''
+  if (!recipientName) return null
+
+  const cleanName = recipientName.replace(/\s+/g, '').toUpperCase()
+  if (cleanName.startsWith('SK') && cleanName.length >= 20) return null
+
+  return {
+    recipientName,
+    note: parts[1] || '',
+    iban: parts[3] || '',
+    variableSymbol: parts[4] || '',
+  }
+}
+
+function buildPaymentTransactionDescription(txn: TransactionRow) {
+  const payment = parseStatementPaymentDescription(txn.description)
+  if (!payment) return null
+
+  const ibanFormatted = payment.iban ? formatIban(payment.iban) : ''
+  const notePart = payment.note ? payment.note.substring(0, 20) : 'Nepovinné'
+  const subtext = [
+    ibanFormatted ? `IBAN: ${ibanFormatted}` : '',
+    `Var. symbol: ${payment.variableSymbol || 'Nepovinné'}`,
+    `Poznámka: ${notePart || 'Nepovinné'}`,
+  ]
+    .filter(Boolean)
+    .join(' | ')
+
+  return {
+    name: `Platba pre: ${payment.recipientName}`,
+    note: subtext,
+    isDeposit: false,
+  }
+}
+
 function buildTransactionDescription(txn: TransactionRow) {
   const isDeposit = txn.type === 'deposit'
+  if (!isDeposit) {
+    const paymentDescription = buildPaymentTransactionDescription(txn)
+    if (paymentDescription) return paymentDescription
+  }
+
   const name = isDeposit ? 'Prichádzajúci štandardný príkaz' : 'Odoslaný štandardný príkaz'
   let note = ''
 
@@ -324,7 +368,7 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
 
     const emptyRowsHtml =
       pageRows.length === 0
-        ? `<div class="empty-rows">Žiadne transakcie v tomto období.</div>`
+        ? `<div class="empty-rows">Žiadne transakcie v danom období</div>`
         : ''
 
     const taxTotalHtml = isFirstPage

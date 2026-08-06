@@ -166,11 +166,48 @@ async function testPaymentConfirmationDate() {
   assert.ok(html.includes('15.07.2026'))
 }
 
+function testPaymentTransactionRow() {
+  const html = generateTransactionsPdf({
+    ...BASE_INPUT,
+    transactions: [
+      {
+        id: 'pay-1',
+        date: '15. 08. 2026',
+        type: 'withdrawal',
+        description:
+          'Ján Kovác|Platba za tovar|Platby|SK8090000000001234567890|123456|||',
+        amount: 10_000,
+        balanceAfter: 4_024_000,
+      },
+    ],
+  })
+
+  return html.then((content) => {
+    assert.ok(content.includes('Platba pre: Ján Kovác'))
+    assert.ok(content.includes('Var. symbol: 123456'))
+    assert.ok(content.includes('Poznámka: Platba za tovar'))
+    assert.ok(content.includes('SK80 9000 0000 0012 3456 7890'))
+    assert.ok(content.includes('- 100,00'))
+  })
+}
+
+async function testEmptyTemplateMessage() {
+  const html = await generateTransactionsPdf({
+    ...BASE_INPUT,
+    transactions: [],
+  })
+
+  assert.ok(html.includes('Žiadne transakcie v danom období'))
+  assert.ok(!html.match(/class="transaction-row"/))
+}
+
 async function run() {
   await testPaginationLogic()
   await testSlspTemplateStructure()
   testAutoTransactionTax()
   await testValidationErrors()
+  await testPaymentTransactionRow()
+  await testEmptyTemplateMessage()
   await testPaymentConfirmationDate()
   console.log('pdf-generator.test.ts: all tests passed')
 }
