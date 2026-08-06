@@ -6,14 +6,14 @@ test.describe('iPhone – Edge cases', () => {
     // Topic: offline gate page
   })
 
-  test.skip('edge-cases-002: offline dashboard shell', async () => {
+  test.skip('edge-cases-002: offline PIN shell', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: offline dashboard shell
+    // Topic: offline PIN shell
   })
 
-  test.skip('edge-cases-003: slow 3G dashboard load', async () => {
+  test.skip('edge-cases-003: slow 3G dashboard2 PIN load', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: slow 3G dashboard load
+    // Topic: slow 3G dashboard2 PIN load
   })
 
   test.skip('edge-cases-004: API timeout retry', async () => {
@@ -31,9 +31,9 @@ test.describe('iPhone – Edge cases', () => {
     // Topic: memory on long scroll
   })
 
-  test.skip('edge-cases-007: rotate during menu open', async () => {
+  test.skip('edge-cases-007: rotate during PIN entry', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: rotate during menu open
+    // Topic: rotate during PIN entry
   })
 
   test.skip('edge-cases-008: rotate during transfer modal', async () => {
@@ -66,14 +66,14 @@ test.describe('iPhone – Edge cases', () => {
     // Topic: stale balance after payment
   })
 
-  test.skip('edge-cases-014: concurrent tab logout', async () => {
+  test.skip('edge-cases-014: concurrent tab logout via payment-orders', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: concurrent tab logout
+    // Topic: concurrent tab logout via payment-orders
   })
 
-  test.skip('edge-cases-015: deep link payment-orders', async () => {
+  test.skip('edge-cases-015: deep link /dashboard/payment-orders', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: deep link payment-orders
+    // Topic: deep link /dashboard/payment-orders
   })
 
   test.skip('edge-cases-016: deep link dashboardpayment', async () => {
@@ -91,9 +91,9 @@ test.describe('iPhone – Edge cases', () => {
     // Topic: site gate empty password
   })
 
-  test.skip('edge-cases-019: session after hard refresh', async () => {
+  test.skip('edge-cases-019: PIN screen after hard refresh', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: session after hard refresh
+    // Topic: PIN screen after hard refresh
   })
 
   test.skip('edge-cases-020: PWA standalone viewport', async () => {
@@ -106,14 +106,14 @@ test.describe('iPhone – Edge cases', () => {
     // Topic: offline gate page
   })
 
-  test.skip('edge-cases-022: offline dashboard shell (variant 2)', async () => {
+  test.skip('edge-cases-022: offline PIN shell (variant 2)', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: offline dashboard shell
+    // Topic: offline PIN shell
   })
 
-  test.skip('edge-cases-023: slow 3G dashboard load (variant 2)', async () => {
+  test.skip('edge-cases-023: slow 3G dashboard2 PIN load (variant 2)', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: slow 3G dashboard load
+    // Topic: slow 3G dashboard2 PIN load
   })
 
   test.skip('edge-cases-024: API timeout retry (variant 2)', async () => {
@@ -131,9 +131,9 @@ test.describe('iPhone – Edge cases', () => {
     // Topic: memory on long scroll
   })
 
-  test.skip('edge-cases-027: rotate during menu open (variant 2)', async () => {
+  test.skip('edge-cases-027: rotate during PIN entry (variant 2)', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: rotate during menu open
+    // Topic: rotate during PIN entry
   })
 
   test.skip('edge-cases-028: rotate during transfer modal (variant 2)', async () => {
@@ -166,14 +166,14 @@ test.describe('iPhone – Edge cases', () => {
     // Topic: stale balance after payment
   })
 
-  test.skip('edge-cases-034: concurrent tab logout (variant 2)', async () => {
+  test.skip('edge-cases-034: concurrent tab logout via payment-orders (variant 2)', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: concurrent tab logout
+    // Topic: concurrent tab logout via payment-orders
   })
 
-  test.skip('edge-cases-035: deep link payment-orders (variant 2)', async () => {
+  test.skip('edge-cases-035: deep link /dashboard/payment-orders (variant 2)', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: deep link payment-orders
+    // Topic: deep link /dashboard/payment-orders
   })
 
   test.skip('edge-cases-036: deep link dashboardpayment (variant 2)', async () => {
@@ -191,9 +191,9 @@ test.describe('iPhone – Edge cases', () => {
     // Topic: site gate empty password
   })
 
-  test.skip('edge-cases-039: session after hard refresh (variant 2)', async () => {
+  test.skip('edge-cases-039: PIN screen after hard refresh (variant 2)', async () => {
     // Scaffold – implement when Edge cases is finalized.
-    // Topic: session after hard refresh
+    // Topic: PIN screen after hard refresh
   })
 
   test.skip('edge-cases-040: PWA standalone viewport (variant 2)', async () => {

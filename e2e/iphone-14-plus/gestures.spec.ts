@@ -1,14 +1,14 @@
 import { test } from '@playwright/test'
 
 test.describe('iPhone 14 Plus – Gestures', () => {
-  test.skip('gestures-001: menu open tap target 44px', async () => {
+  test.skip('gestures-001: Nová platba tap target 44px', async () => {
     // Scaffold – implement when Gestures is finalized.
-    // Topic: menu open tap target 44px
+    // Topic: Nová platba tap target 44px
   })
 
-  test.skip('gestures-002: logout tap target 44px', async () => {
+  test.skip('gestures-002: logout via payment-orders header 44px', async () => {
     // Scaffold – implement when Gestures is finalized.
-    // Topic: logout tap target 44px
+    // Topic: logout via payment-orders header 44px
   })
 
   test.skip('gestures-003: transfer modal close swipe', async () => {
@@ -16,9 +16,9 @@ test.describe('iPhone 14 Plus – Gestures', () => {
     // Topic: transfer modal close swipe
   })
 
-  test.skip('gestures-004: products accordion tap', async () => {
+  test.skip('gestures-004: SPACE účet card tap', async () => {
     // Scaffold – implement when Gestures is finalized.
-    // Topic: products accordion tap
+    // Topic: SPACE účet card tap
   })
 
   test.skip('gestures-005: filter chip tap', async () => {
@@ -61,9 +61,9 @@ test.describe('iPhone 14 Plus – Gestures', () => {
     // Topic: keyboard dismiss on scroll
   })
 
-  test.skip('gestures-013: sticky header after fling', async () => {
+  test.skip('gestures-013: sticky Prehľad header after fling', async () => {
     // Scaffold – implement when Gestures is finalized.
-    // Topic: sticky header after fling
+    // Topic: sticky Prehľad header after fling
   })
 
   test.skip('gestures-014: bottom CTA thumb reach', async () => {
@@ -76,9 +76,9 @@ test.describe('iPhone 14 Plus – Gestures', () => {
     // Topic: safe-area notch overlap
   })
 
-  test.skip('gestures-016: landscape menu overlay', async () => {
+  test.skip('gestures-016: landscape payment-orders menu overlay', async () => {
     // Scaffold – implement when Gestures is finalized.
-    // Topic: landscape menu overlay
+    // Topic: landscape payment-orders menu overlay
   })
 
   test.skip('gestures-017: touch highlight removed', async () => {
@@ -101,14 +101,14 @@ test.describe('iPhone 14 Plus – Gestures', () => {
     // Topic: virtual keyboard overlay
   })
 
-  test.skip('gestures-021: menu open tap target 44px (variant 2)', async () => {
+  test.skip('gestures-021: Nová platba tap target 44px (variant 2)', async () => {
     // Scaffold – implement when Gestures is finalized.
-    // Topic: menu open tap target 44px
+    // Topic: Nová platba tap target 44px
   })
 
-  test.skip('gestures-022: logout tap target 44px (variant 2)', async () => {
+  test.skip('gestures-022: logout via payment-orders header 44px (variant 2)', async () => {
     // Scaffold – implement when Gestures is finalized.
-    // Topic: logout tap target 44px
+    // Topic: logout via payment-orders header 44px
   })
 
   test.skip('gestures-023: transfer modal close swipe (variant 2)', async () => {
@@ -116,9 +116,9 @@ test.describe('iPhone 14 Plus – Gestures', () => {
     // Topic: transfer modal close swipe
   })
 
-  test.skip('gestures-024: products accordion tap (variant 2)', async () => {
+  test.skip('gestures-024: SPACE účet card tap (variant 2)', async () => {
     // Scaffold – implement when Gestures is finalized.
-    // Topic: products accordion tap
+    // Topic: SPACE účet card tap
   })
 
   test.skip('gestures-025: filter chip tap (variant 2)', async () => {
@@ -161,9 +161,9 @@ test.describe('iPhone 14 Plus – Gestures', () => {
     // Topic: keyboard dismiss on scroll
   })
 
-  test.skip('gestures-033: sticky header after fling (variant 2)', async () => {
+  test.skip('gestures-033: sticky Prehľad header after fling (variant 2)', async () => {
     // Scaffold – implement when Gestures is finalized.
-    // Topic: sticky header after fling
+    // Topic: sticky Prehľad header after fling
   })
 
   test.skip('gestures-034: bottom CTA thumb reach (variant 2)', async () => {
@@ -176,9 +176,9 @@ test.describe('iPhone 14 Plus – Gestures', () => {
     // Topic: safe-area notch overlap
   })
 
-  test.skip('gestures-036: landscape menu overlay (variant 2)', async () => {
+  test.skip('gestures-036: landscape payment-orders menu overlay (variant 2)', async () => {
     // Scaffold – implement when Gestures is finalized.
-    // Topic: landscape menu overlay
+    // Topic: landscape payment-orders menu overlay
   })
 
   test.skip('gestures-037: touch highlight removed (variant 2)', async () => {

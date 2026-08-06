@@ -10,64 +10,18 @@ type SuiteSpec = {
   topics: string[]
 }
 
+/**
+ * Hand-maintained (do NOT regenerate — real assertions for PIN gate + full-bleed):
+ * - e2e/iphone-14-plus/auth.spec.ts
+ * - e2e/iphone-14-plus/dashboard.spec.ts
+ *
+ * Product rules these scaffolds must follow:
+ * - Guest lands on PIN (`loginWithPin`); Prehľad is behind PIN
+ * - No Menu / Odhlás on /dashboard2 full-bleed (desktop chrome only)
+ * - Classic Menu / Odhlás live on /dashboard/payment-orders (not /dashboard2/*)
+ * - Cards UI is Karty modal ("Vaše platobné karty"), not masked 4544 strings
+ */
 const SUITES: SuiteSpec[] = [
-  {
-    file: 'auth.spec.ts',
-    suite: 'iPhone 14 Plus – Auth',
-    count: 40,
-    topics: [
-      'site gate redirect',
-      'gate password validation',
-      'sign-in form layout',
-      'sign-up form layout',
-      'safe-login interstitial',
-      'session persistence',
-      'expired session redirect',
-      'logout flow',
-      'cross-tab session sync',
-      'remember device checkbox',
-      'invalid credentials error',
-      'empty form validation',
-      'keyboard focus order',
-      'autofill compatibility',
-      'password visibility toggle',
-      'deep link to sign-in',
-      'deep link to dashboard when authed',
-      'gate cookie persistence',
-      'auth after gate unlock',
-      'locale on auth screens',
-    ],
-  },
-  {
-    file: 'dashboard.spec.ts',
-    suite: 'iPhone 14 Plus – Dashboard',
-    count: 60,
-    topics: [
-      'George header 3-zone layout',
-      'SLSP logo visibility',
-      'Odhlásenie tap target',
-      'menu overlay width',
-      'menu dynamic balance',
-      'Vaše produkty accordion',
-      'SPACE účet card tap',
-      'card number masking',
-      'Prehľad prevodov section',
-      'balance display formatting',
-      'transaction filter chips',
-      'sticky header on scroll',
-      'footer add-money CTA',
-      'assistant widget position',
-      'safe area top inset',
-      'safe area bottom inset',
-      'portrait viewport fit',
-      'landscape viewport fit',
-      'no horizontal overflow',
-      'Domov title bar',
-      // 14 Plus specific layout width (428 CSS px)
-      'large-screen card spacing',
-      'notch safe-area content offset',
-    ],
-  },
   {
     file: 'transactions.spec.ts',
     suite: 'iPhone 14 Plus – Transactions',
@@ -127,10 +81,10 @@ const SUITES: SuiteSpec[] = [
     suite: 'iPhone 14 Plus – Gestures',
     count: 40,
     topics: [
-      'menu open tap target 44px',
-      'logout tap target 44px',
+      'Nová platba tap target 44px',
+      'logout via payment-orders header 44px',
       'transfer modal close swipe',
-      'products accordion tap',
+      'SPACE účet card tap',
       'filter chip tap',
       'transaction row tap',
       'scroll momentum',
@@ -139,10 +93,10 @@ const SUITES: SuiteSpec[] = [
       'pinch zoom disabled',
       'long press no context menu',
       'keyboard dismiss on scroll',
-      'sticky header after fling',
+      'sticky Prehľad header after fling',
       'bottom CTA thumb reach',
       'safe-area notch overlap',
-      'landscape menu overlay',
+      'landscape payment-orders menu overlay',
       'touch highlight removed',
       'active state on buttons',
       'form input focus scroll',
@@ -155,24 +109,24 @@ const SUITES: SuiteSpec[] = [
     count: 40,
     topics: [
       'offline gate page',
-      'offline dashboard shell',
-      'slow 3G dashboard load',
+      'offline PIN shell',
+      'slow 3G dashboard2 PIN load',
       'API timeout retry',
       '500+ transaction render',
       'memory on long scroll',
-      'rotate during menu open',
+      'rotate during PIN entry',
       'rotate during transfer modal',
       'low battery mode throttling',
       'service worker cache hit',
       'push permission prompt',
       'duplicate payment submit',
       'stale balance after payment',
-      'concurrent tab logout',
-      'deep link payment-orders',
+      'concurrent tab logout via payment-orders',
+      'deep link /dashboard/payment-orders',
       'deep link dashboardpayment',
       'site gate wrong password',
       'site gate empty password',
-      'session after hard refresh',
+      'PIN screen after hard refresh',
       'PWA standalone viewport',
     ],
   },
@@ -226,9 +180,14 @@ function main() {
 
   fs.writeFileSync(
     path.join(OUT_DIR, 'README.md'),
-    `# iPhone 14 Plus E2E scaffold
+    `# iPhone 14 Plus E2E
 
-${total} skipped Playwright tests for the **iPhone 14 Plus** project in \`playwright.config.ts\`.
+Hand-maintained (never overwritten by this script):
+
+- \`auth.spec.ts\` — guest → PIN → Prehľad via \`loginWithPin\`
+- \`dashboard.spec.ts\` — full-bleed Prehľad; classic Menu/Odhlás on \`/dashboard/payment-orders\`
+
+${total} skipped scaffold tests for the **iPhone 14 Plus** project in \`playwright.config.ts\`.
 
 Device preset: Playwright \`devices['iPhone 14 Plus']\` (428×746 viewport, 3× DPR, WebKit).
 
@@ -238,7 +197,7 @@ Run only this suite:
 npx playwright test --project="iPhone 14 Plus"
 \`\`\`
 
-Regenerate scaffolds:
+Regenerate scaffolds only (auth/dashboard are excluded):
 
 \`\`\`bash
 npx tsx scripts/generate-iphone-14-plus-tests.ts
@@ -246,6 +205,8 @@ npx tsx scripts/generate-iphone-14-plus-tests.ts
 
 | File | Tests | Focus |
 |------|------:|-------|
+| auth.spec.ts | hand | Auth + PIN |
+| dashboard.spec.ts | hand | Dashboard2 full-bleed |
 ${SUITES.map((s) => `| ${s.file} | ${s.count} | ${s.suite.split('–')[1]?.trim() ?? s.suite} |`).join('\n')}
 `,
     'utf8'

@@ -1,37 +1,31 @@
 # iPhone 14 Plus E2E
 
-Playwright project **iPhone 14 Plus** (`devices['iPhone 14 Plus']` – 428×746, 3× DPR, WebKit).
+Hand-maintained (never overwritten by this script):
 
-## Implemented (real tests)
+- `auth.spec.ts` — guest → PIN → Prehľad via `loginWithPin`
+- `dashboard.spec.ts` — full-bleed Prehľad; classic Menu/Odhlás on `/dashboard/payment-orders`
 
-| File | Status | Focus |
-|------|--------|-------|
-| `auth.spec.ts` | **live** | gate, form layout, validation, login, protected routes |
-| `dashboard.spec.ts` | **live** | header, products, cards, menu, overflow, cross-page header |
-| `transactions.spec.ts` | scaffold (skip) | transactions |
-| `export-pdf.spec.ts` | scaffold (skip) | PDF export |
-| `gestures.spec.ts` | scaffold (skip) | touch / gestures |
-| `edge-cases.spec.ts` | scaffold (skip) | offline, rotate, deep links |
+200 skipped scaffold tests for the **iPhone 14 Plus** project in `playwright.config.ts`.
 
-## Run
+Device preset: Playwright `devices['iPhone 14 Plus']` (428×746 viewport, 3× DPR, WebKit).
+
+Run only this suite:
 
 ```bash
-# whole 14 Plus project (live + skipped)
-npm run test:iphone-14-plus
-
-# only implemented suites
-npx playwright test --project="iPhone 14 Plus" e2e/iphone-14-plus/auth.spec.ts e2e/iphone-14-plus/dashboard.spec.ts
-
-# modern default (17 Pro + Air) — does NOT include 14 Plus
-npm run test:iphone
+npx playwright test --project="iPhone 14 Plus"
 ```
 
-Legacy only: this folder is excluded from `npm run test:iphone`. Prefer shared suite in [`../iphone/`](../iphone/).
-
-## Regenerate remaining scaffolds
+Regenerate scaffolds only (auth/dashboard are excluded):
 
 ```bash
-npm run test:generate-iphone-14-plus
+npx tsx scripts/generate-iphone-14-plus-tests.ts
 ```
 
-> Regenerating overwrites `auth.spec.ts` / `dashboard.spec.ts` – re-apply real tests after regenerate if needed.
+| File | Tests | Focus |
+|------|------:|-------|
+| auth.spec.ts | hand | Auth + PIN |
+| dashboard.spec.ts | hand | Dashboard2 full-bleed |
+| transactions.spec.ts | 80 | Transactions |
+| export-pdf.spec.ts | 40 | Export PDF |
+| gestures.spec.ts | 40 | Gestures |
+| edge-cases.spec.ts | 40 | Edge cases |
