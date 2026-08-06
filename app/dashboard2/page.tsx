@@ -83,10 +83,10 @@ function parseMovementDescription(description: string | undefined | null): {
   const raw = (description || '').trim()
   if (!raw) return { recipient: 'Neznáma transakcia' }
 
-  const ibanMatch = raw.match(/IBAN:\s*([A-Za-z0-9 ]+)/i)
+  const ibanMatch = raw.match(/IBAN:\s*([A-Za-z0-9 ]+?)(?=\s+(?:VS|CS|SS):|\s*$)/i)
   const vsMatch = raw.match(/VS:\s*([A-Za-z0-9]+)/i)
   let head = raw
-    .replace(/\s*IBAN:\s*[A-Za-z0-9 ]+/i, '')
+    .replace(/\s*IBAN:\s*[A-Za-z0-9 ]+?(?=\s+(?:VS|CS|SS):|\s*$)/i, '')
     .replace(/\s*VS:\s*[A-Za-z0-9]+/i, '')
     .trim()
   const noteMatch = head.match(/^(.*?)\s*\((.*)\)\s*$/)
