@@ -35,7 +35,10 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  padding: 20mm 18mm 18mm 20mm;
+  /* Text block sits 5px higher than the raw 20mm/18mm margins to match the
+     reference statement; the bottom padding absorbs the same 5px so the
+     footer, which is pinned by margin-top:auto, moves up with it. */
+  padding: calc(20mm - 5px) 18mm calc(18mm + 5px) 20mm;
   display: flex;
   flex-direction: column;
   transform-origin: top left;
