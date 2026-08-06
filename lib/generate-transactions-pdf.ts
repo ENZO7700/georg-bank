@@ -126,8 +126,52 @@ function resolveTax(data: TransactionsPdfInput) {
   return computeStatementTax(data.transactions)
 }
 
+export function parseStatementPaymentDescription(description: string | null) {
+  if (!description?.includes('|')) return null
+
+  const parts = description.split('|').map((part) => part.trim())
+  const recipientName = parts[0] || ''
+  if (!recipientName) return null
+
+  const cleanName = recipientName.replace(/\s+/g, '').toUpperCase()
+  if (cleanName.startsWith('SK') && cleanName.length >= 20) return null
+
+  return {
+    recipientName,
+    note: parts[1] || '',
+    iban: parts[3] || '',
+    variableSymbol: parts[4] || '',
+  }
+}
+
+function buildPaymentTransactionDescription(txn: TransactionRow) {
+  const payment = parseStatementPaymentDescription(txn.description)
+  if (!payment) return null
+
+  const ibanFormatted = payment.iban ? formatIban(payment.iban) : ''
+  const notePart = payment.note ? payment.note.substring(0, 20) : 'Nepovinné'
+  const subtext = [
+    ibanFormatted ? `IBAN: ${ibanFormatted}` : '',
+    `Var. symbol: ${payment.variableSymbol || 'Nepovinné'}`,
+    `Poznámka: ${notePart || 'Nepovinné'}`,
+  ]
+    .filter(Boolean)
+    .join(' | ')
+
+  return {
+    name: `Platba pre: ${payment.recipientName}`,
+    note: subtext,
+    isDeposit: false,
+  }
+}
+
 function buildTransactionDescription(txn: TransactionRow) {
   const isDeposit = txn.type === 'deposit'
+  if (!isDeposit) {
+    const paymentDescription = buildPaymentTransactionDescription(txn)
+    if (paymentDescription) return paymentDescription
+  }
+
   const name = isDeposit ? 'Prichádzajúci štandardný príkaz' : 'Odoslaný štandardný príkaz'
   let note = ''
 
@@ -179,85 +223,94 @@ function buildTransactionRowHtml(txn: TransactionRow): string {
         </div>`
 }
 
-function buildDetailsBox(data: TransactionsPdfInput, formattedIban: string, bic: string) {
+/** Pre-formatted statement values; the only source the renderer reads from. */
+interface StatementViewModel {
+  accountName: string
+  accountNumber: string
+  bic: string
+  currency: string
+  accountProductType: string
+  holderAddressLines: string[]
+  statementDate: string
+  accountingPeriod: string
+  statementNumber: string
+  initialBalance: string
+  depositsTotal: string
+  withdrawalsTotal: string
+  finalBalance: string
+  taxTotal: string
+  taxLines: Array<{ label: string; amount: string; count: string }>
+  rows: string[]
+}
+
+function buildDetailsBox(vm: StatementViewModel) {
   return `
     <div class="details-box">
       <div class="details-col">
         <div class="details-row row-large">
           <span class="marker"></span>
           <span class="label">Názov Účtu</span>
-          <span class="value value-large">${escapeHtml(data.accountName)}</span>
+          <span class="value value-large">${escapeHtml(vm.accountName)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Číslo Účtu</span>
-          <span class="value">${formattedIban}</span>
+          <span class="value">${escapeHtml(vm.accountNumber)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">BIC</span>
-          <span class="value value-right">${escapeHtml(bic || 'GIBASKBX')}</span>
+          <span class="value value-right">${escapeHtml(vm.bic)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Mena</span>
-          <span class="value value-right">${escapeHtml(data.currency)}</span>
+          <span class="value value-right">${escapeHtml(vm.currency)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Dátum vyhotovenia výpisu</span>
-          <span class="value value-right">${escapeHtml(data.statementDate)}</span>
+          <span class="value value-right">${escapeHtml(vm.statementDate)}</span>
         </div>
       </div>
       <div class="details-col">
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Účtovné obdobie</span>
-          <span class="value">${escapeHtml(data.accountingPeriod)}</span>
+          <span class="value">${escapeHtml(vm.accountingPeriod)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Počiatočný stav Účtu</span>
-          <span class="value">${formatBalance(data.initialBalance)}</span>
+          <span class="value">${escapeHtml(vm.initialBalance)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Vklady spolu</span>
-          <span class="value">${formatBalance(data.depositsTotal)}</span>
+          <span class="value">${escapeHtml(vm.depositsTotal)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Výbery spolu</span>
-          <span class="value">- ${formatBalance(data.withdrawalsTotal)}</span>
+          <span class="value">${escapeHtml(vm.withdrawalsTotal)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Konečný stav Účtu</span>
-          <span class="value">${formatBalance(data.finalBalance)}</span>
+          <span class="value">${escapeHtml(vm.finalBalance)}</span>
         </div>
       </div>
     </div>`
 }
 
-function buildTaxBreakdownHtml(lines: TransactionTaxLine[]) {
-  if (lines.length === 0) {
-    return `
-    <div class="tax-breakdown">
-      <div class="tax-breakdown-title">Prehľad zúčtovanej Transakčnej dane:</div>
-      <div class="tax-breakdown-row">
-        <span class="tax-label">Transakčná daň:</span>
-        <span class="tax-amount">${formatSignedBalance(0)}</span>
-      </div>
-    </div>`
-  }
-
+function buildTaxBreakdownHtml(lines: StatementViewModel['taxLines']) {
   const rows = lines
     .map(
       (line) => `
       <div class="tax-breakdown-row">
         <span class="tax-label">${escapeHtml(line.label)}:</span>
-        <span class="tax-amount">${formatSignedBalance(-Math.abs(line.amountCents))}</span>
-        <span class="tax-count">(${line.count} ks)</span>
+        <span class="tax-amount">${escapeHtml(line.amount)}</span>
+        <span class="tax-count">${escapeHtml(line.count)}</span>
       </div>`,
     )
     .join('')
@@ -287,27 +340,20 @@ function loadStatementCss(): string {
   return fs.readFileSync(cssPath, 'utf8')
 }
 
-export async function generateTransactionsPdf(data: TransactionsPdfInput): Promise<string> {
-  validatePdfInput(data)
-
-  const tax = resolveTax(data)
-  const formattedSenderIban = formatIban(data.accountNumber)
-  const bic = getBicFromIban(data.accountNumber)
-  const rowHtmlList = data.transactions.map(buildTransactionRowHtml)
-
+function renderStatementHtml(vm: StatementViewModel): string {
   const ROWS_PAGE_1 = 12
   const ROWS_PER_CONTINUATION = 18
   const PAGE1_BOX_HEIGHT = '520px'
   const CONTINUATION_BOX_HEIGHT = '860px'
 
   const pages: string[][] = []
-  if (rowHtmlList.length <= ROWS_PAGE_1) {
-    pages.push(rowHtmlList)
+  if (vm.rows.length <= ROWS_PAGE_1) {
+    pages.push(vm.rows)
   } else {
-    pages.push(rowHtmlList.slice(0, ROWS_PAGE_1))
+    pages.push(vm.rows.slice(0, ROWS_PAGE_1))
     let offset = ROWS_PAGE_1
-    while (offset < rowHtmlList.length) {
-      pages.push(rowHtmlList.slice(offset, offset + ROWS_PER_CONTINUATION))
+    while (offset < vm.rows.length) {
+      pages.push(vm.rows.slice(offset, offset + ROWS_PER_CONTINUATION))
       offset += ROWS_PER_CONTINUATION
     }
   }
@@ -318,30 +364,28 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
     const pageRows = pages[pageIdx]
     const isFirstPage = pageIdx === 0
     const boxHeight = isFirstPage ? PAGE1_BOX_HEIGHT : CONTINUATION_BOX_HEIGHT
-    const pageNumber = pageIdx + 1
-    const totalPages = pages.length
-    const pageMeta = `č.${data.statementNumber} - Strana ${pageNumber}/${totalPages}`
+    const pageMeta = `č.${vm.statementNumber} - Strana ${pageIdx + 1}/${pages.length}`
 
     const emptyRowsHtml =
       pageRows.length === 0
-        ? `<div class="empty-rows">Žiadne transakcie v tomto období.</div>`
+        ? `<div class="empty-rows">Žiadne transakcie v danom období</div>`
         : ''
 
     const taxTotalHtml = isFirstPage
       ? `
     <div class="tax-total-row">
       <span class="tax-total-label">Transakčná daň spolu:</span>
-      <span class="tax-total-value">${formatSignedBalance(-Math.abs(tax.totalCents))} EUR</span>
+      <span class="tax-total-value">${escapeHtml(vm.taxTotal)}</span>
     </div>`
       : ''
 
-    const detailsHtml = isFirstPage ? buildDetailsBox(data, formattedSenderIban, bic) : ''
+    const detailsHtml = isFirstPage ? buildDetailsBox(vm) : ''
     const titleHtml = isFirstPage
-      ? `<div class="document-title">Výpis z Účtu: ${escapeHtml(data.accountProductType)}</div>`
+      ? `<div class="document-title">Výpis z Účtu: ${escapeHtml(vm.accountProductType)}</div>`
       : ''
     const headerAddressHtml = isFirstPage
-      ? `<div class="holder-address">${buildHolderAddressHtml(data.holderAddressLines)}</div>`
-      : `<div class="holder-address continuation-account">${formattedSenderIban} · ${escapeHtml(data.currency)} · ${escapeHtml(data.accountingPeriod)}</div>`
+      ? `<div class="holder-address">${buildHolderAddressHtml(vm.holderAddressLines)}</div>`
+      : `<div class="holder-address continuation-account">${escapeHtml(vm.accountNumber)} · ${escapeHtml(vm.currency)} · ${escapeHtml(vm.accountingPeriod)}</div>`
 
     pagesHtml += `
   <div class="page-viewport">
@@ -364,7 +408,7 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
         </div>
       </div>
 
-      ${isFirstPage ? buildTaxBreakdownHtml(tax.lines) : ''}
+      ${isFirstPage ? buildTaxBreakdownHtml(vm.taxLines) : ''}
       ${isFirstPage ? buildSlspLegalNoticeHtml() : ''}
       ${buildSlspFooterHtml()}
     </div>
@@ -383,4 +427,65 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
   ${pagesHtml}
 </body>
 </html>`
+}
+
+export async function generateTransactionsPdf(data: TransactionsPdfInput): Promise<string> {
+  validatePdfInput(data)
+
+  const tax = resolveTax(data)
+  const taxLines = tax.lines.length
+    ? tax.lines.map((line) => ({
+        label: line.label,
+        amount: formatSignedBalance(-Math.abs(line.amountCents)),
+        count: `(${line.count} ks)`,
+      }))
+    : [{ label: 'Transakčná daň', amount: formatSignedBalance(0), count: '' }]
+
+  return renderStatementHtml({
+    accountName: data.accountName,
+    accountNumber: formatIban(data.accountNumber),
+    bic: getBicFromIban(data.accountNumber) || 'GIBASKBX',
+    currency: data.currency,
+    accountProductType: data.accountProductType,
+    holderAddressLines: data.holderAddressLines,
+    statementDate: data.statementDate,
+    accountingPeriod: data.accountingPeriod,
+    statementNumber: data.statementNumber,
+    initialBalance: formatBalance(data.initialBalance),
+    depositsTotal: formatBalance(data.depositsTotal),
+    withdrawalsTotal: `- ${formatBalance(data.withdrawalsTotal)}`,
+    finalBalance: formatBalance(data.finalBalance),
+    taxTotal: `${formatSignedBalance(-Math.abs(tax.totalCents))} EUR`,
+    taxLines,
+    rows: data.transactions.map(buildTransactionRowHtml),
+  })
+}
+
+/**
+ * Data-free statement skeleton: static SLSP branding plus `{{ token }}`
+ * placeholders for every value the payment flow fills in at generate time.
+ */
+export function renderStatementSkeletonHtml(): string {
+  return renderStatementHtml({
+    accountName: '{{ accountName }}',
+    accountNumber: '{{ accountNumber }}',
+    bic: '{{ bic }}',
+    currency: '{{ currency }}',
+    accountProductType: '{{ accountProductType }}',
+    holderAddressLines: [
+      '{{ accountName }}',
+      '{{ holderAddressLine1 }}',
+      '{{ holderAddressLine2 }}',
+    ],
+    statementDate: '{{ statementDate }}',
+    accountingPeriod: '{{ accountingPeriod }}',
+    statementNumber: '{{ statementNumber }}',
+    initialBalance: '{{ initialBalance }}',
+    depositsTotal: '{{ depositsTotal }}',
+    withdrawalsTotal: '{{ withdrawalsTotal }}',
+    finalBalance: '{{ finalBalance }}',
+    taxTotal: '{{ transactionTaxTotal }}',
+    taxLines: [{ label: 'Transakčná daň', amount: '{{ transactionTax }}', count: '' }],
+    rows: [],
+  })
 }

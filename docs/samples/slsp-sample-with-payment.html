@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Výpis z účtu</title>
+  <style>* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #f0f2f5;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #1a1919;
+  gap: 40px;
+  padding: 40px 20px;
+  overflow-x: auto;
+}
+
+.page-viewport {
+  width: 100%;
+  max-width: 876px;
+  aspect-ratio: 876 / 1199;
+  container-type: inline-size;
+  margin: 0 auto;
+  position: relative;
+  flex-shrink: 0;
+  page-break-after: always;
+}
+
+.page {
+  width: 876px;
+  height: 1199px;
+  background-color: #ffffff;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 20mm 18mm 18mm 20mm;
+  display: flex;
+  flex-direction: column;
+  transform-origin: top left;
+  transform: scale(calc(100cqw / 876));
+}
+
+.page-meta {
+  text-align: right;
+  font-size: 11px;
+  font-weight: 700;
+  color: #003366;
+  margin-bottom: 18px;
+}
+
+.header-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 18px;
+  align-items: start;
+}
+
+.logo-row {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.logo-text-col {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+
+.logo-main-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.logo-title {
+  font-size: 22px;
+  font-weight: 900;
+  color: #003366;
+  letter-spacing: -0.5px;
+}
+
+.logo-subtitle {
+  font-size: 18px;
+  font-weight: 500;
+  color: #003366;
+  margin-top: -2px;
+}
+
+.logo-icon-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.erste-symbol {
+  width: 28px;
+  height: 28px;
+}
+
+.bank-block {
+  font-size: 9.5px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+.bank-block-compact {
+  font-size: 11px;
+  font-weight: 700;
+  color: #003366;
+  padding-top: 8px;
+}
+
+.holder-address {
+  text-align: right;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 500;
+}
+
+.continuation-account {
+  font-size: 10px;
+  font-weight: 700;
+  color: #003366;
+}
+
+.document-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #003366;
+  margin-bottom: 10px;
+}
+
+.details-box {
+  background-color: #d4e0e2;
+  border-radius: 6px;
+  padding: 10px 14px 12px;
+  display: grid;
+  grid-template-columns: 1.08fr 1fr;
+  gap: 28px;
+  margin-bottom: 12px;
+}
+
+.details-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.details-row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1.5px solid #8a9fac;
+  min-height: 20px;
+  padding-bottom: 2px;
+}
+
+.details-row.row-large {
+  min-height: 24px;
+}
+
+.marker {
+  width: 10px;
+  height: 10px;
+  background-color: #536f85;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.value {
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: auto;
+  text-align: right;
+}
+
+.value-large {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.value-right {
+  margin-left: auto;
+}
+
+.tax-total-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 12px;
+  margin: 8px 0 14px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tax-total-value {
+  min-width: 120px;
+  text-align: right;
+}
+
+.table-container {
+  margin-bottom: 16px;
+}
+
+.table-header {
+  background-color: #d4e0e2;
+  border: 1px solid #cccccc;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  height: 37px;
+  display: grid;
+  grid-template-columns: 85px 95px 1fr 95px 80px;
+  align-items: center;
+  padding: 0 12px;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.header-cell {
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #003366;
+}
+
+.cell-left {
+  text-align: left;
+}
+
+.cell-right {
+  text-align: right;
+}
+
+.transaction-box {
+  border: 1px solid #cccccc;
+  border-radius: 8px;
+  padding: 12px;
+  background-color: #ffffff;
+}
+
+.transaction-row {
+  display: grid;
+  grid-template-columns: 85px 95px 1fr 95px 80px;
+  align-items: start;
+  gap: 8px;
+  margin-bottom: 12px;
+  page-break-inside: avoid;
+}
+
+.body-cell {
+  font-size: 11px;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.popis-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.popis-title {
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.popis-subtext {
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.empty-rows {
+  text-align: center;
+  font-size: 12px;
+  padding: 20px 0;
+  color: #1a1919;
+}
+
+.tax-breakdown {
+  margin-bottom: 14px;
+  font-size: 11px;
+}
+
+.tax-breakdown-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.tax-breakdown-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.tax-label {
+  font-weight: 500;
+}
+
+.tax-amount {
+  font-weight: 700;
+  text-align: right;
+  min-width: 90px;
+}
+
+.tax-count {
+  font-weight: 500;
+  min-width: 48px;
+}
+
+.legal-notice {
+  font-size: 9px;
+  line-height: 1.45;
+  margin-bottom: 18px;
+  max-width: 92%;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.footer-item {
+  font-size: 9px;
+  font-weight: 700;
+  color: #003366;
+}
+
+@media print {
+  body {
+    background-color: #ffffff;
+    gap: 0;
+    padding: 0;
+    overflow-x: visible;
+  }
+
+  .page-viewport {
+    aspect-ratio: auto;
+    width: 876px;
+    height: 1199px;
+  }
+
+  .page {
+    position: relative;
+    transform: none !important;
+    box-shadow: none;
+    margin: 0 !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+</style>
+</head>
+<body>
+  
+  <div class="page-viewport">
+    <div class="page">
+      <div class="page-meta">č.8/2026 - Strana 1/1</div>
+
+      <div class="header-row">
+        
+      <div class="bank-block">
+        
+    <div class="logo-row">
+      <div class="logo-text-col">
+        <div class="logo-main-row">
+          <span class="logo-title">SLOVENSKÁ</span>
+          <span class="logo-icon-wrapper"><svg class="erste-symbol" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <rect width="32" height="32" rx="2" fill="#E30613"/>
+  <path fill="#FFFFFF" d="M8 22V10h3.2c2.8 0 4.6 1.5 4.6 3.9 0 2.1-1.4 3.4-3.5 3.7L17.5 22H14l-2.6-3.8H11V22H8zm3-6.1h.4c1.1 0 1.7-.5 1.7-1.3 0-.8-.6-1.2-1.7-1.2h-.4v2.5zM18.5 22l4.8-12h3.1l-4.8 12h-3.1z"/>
+</svg></span>
+        </div>
+        <span class="logo-subtitle">sporiteľňa</span>
+      </div>
+    </div>
+        Slovenská sporiteľňa, a.s.<br>
+        Tomášikova 48, 832 37 Bratislava<br>
+        IČO 00 151 653, zapísaná v Obchodnom registri<br>
+        Mestského súdu Bratislava III., oddiel Sa, vložka č. 601/B
+      </div>
+        <div class="holder-address"><div>Ján Kovác</div><div>Hlavná 1</div><div>811 01 Bratislava</div></div>
+      </div>
+
+      <div class="document-title">Výpis z Účtu: Osobný účet</div>
+      
+    <div class="details-box">
+      <div class="details-col">
+        <div class="details-row row-large">
+          <span class="marker"></span>
+          <span class="label">Názov Účtu</span>
+          <span class="value value-large">Ján Kovác</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Číslo Účtu</span>
+          <span class="value">SK80 9000 0000 0012 3456 7890</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">BIC</span>
+          <span class="value value-right">GIBASKBX</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Mena</span>
+          <span class="value value-right">EUR</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Dátum vyhotovenia výpisu</span>
+          <span class="value value-right">06. 08. 2026</span>
+        </div>
+      </div>
+      <div class="details-col">
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Účtovné obdobie</span>
+          <span class="value">06. 08. 2026 - 06. 08. 2026</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Počiatočný stav Účtu</span>
+          <span class="value">0,00</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Vklady spolu</span>
+          <span class="value">0,00</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Výbery spolu</span>
+          <span class="value">- 100,00</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Konečný stav Účtu</span>
+          <span class="value">-100,40</span>
+        </div>
+      </div>
+    </div>
+      
+    <div class="tax-total-row">
+      <span class="tax-total-label">Transakčná daň spolu:</span>
+      <span class="tax-total-value">- 0,40 EUR</span>
+    </div>
+
+      <div class="table-container">
+        
+      <div class="table-header">
+        <div class="header-cell cell-left">Dátum<br>valuty</div>
+        <div class="header-cell cell-left">Dátum<br>zúčtovania</div>
+        <div class="header-cell cell-left">Popis<br>transakcie</div>
+        <div class="header-cell cell-right">Suma<br>transakcie</div>
+        <div class="header-cell cell-right">Suma<br>poplatku</div>
+      </div>
+        <div class="transaction-box" style="min-height: 520px;">
+          
+        <div class="transaction-row">
+          <div class="body-cell cell-left">06. 08. 2026</div>
+          <div class="body-cell cell-left">06. 08. 2026</div>
+          <div class="body-cell cell-left popis-cell">
+            <span class="popis-title">Platba pre: Ján Kovác</span>
+            <span class="popis-subtext">IBAN: SK80 9000 0000 0012 3456 7890 | Var. symbol: 123456 | Poznámka: Platba za tovar</span>
+          </div>
+          <div class="body-cell cell-right">- 100,00</div>
+          <div class="body-cell cell-right">0,00</div>
+        </div>
+        </div>
+      </div>
+
+      
+    <div class="tax-breakdown">
+      <div class="tax-breakdown-title">Prehľad zúčtovanej Transakčnej dane:</div>
+      
+      <div class="tax-breakdown-row">
+        <span class="tax-label">Transakčná daň:</span>
+        <span class="tax-amount">- 0,40</span>
+        <span class="tax-count">(1 ks)</span>
+      </div>
+    </div>
+      <div class="legal-notice">Vklad podliehajúci ochrane vkladov v súlade so zákonom. Viac informácií získate v Informačnom formulári pre vkladateľa, ktorý Vám bol doručený alebo odovzdaný.</div>
+      
+    <div class="footer">
+      <div class="footer-item">info@slsp.sk</div>
+      <div class="footer-item">Klientske centrum: 0850 111 888</div>
+      <div class="footer-item">www.slsp.sk</div>
+    </div>
+    </div>
+  </div>
+</body>
+</html>
