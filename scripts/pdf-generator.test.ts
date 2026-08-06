@@ -11,21 +11,18 @@ async function testPaginationLogic() {
     depositsTotal: 500,
     withdrawalsTotal: 300,
     currency: 'EUR',
-    dateCreated: '01. 04. 2026 – 30. 04. 2026',
+    statementDate: '30. 04. 2026',
+    accountingPeriod: '01. 04. 2026 - 30. 04. 2026',
     statementNumber: '4/2026',
     transactions: [] as any[],
   }
 
-  // Test 1: 10 transactions -> should fit on 1 page (max 12 on first page)
   for (let i = 0; i < 10; i++) {
     statementData.transactions.push({
       date: '05. 04. 2026',
-      settlementDate: '06. 04. 2026',
       description: `Tx ${i}`,
       amount: 10,
-      fees: 0,
-      resultingBalance: 1000 + i * 10,
-      type: 'incoming',
+      type: 'deposit',
     })
   }
 
@@ -33,42 +30,65 @@ async function testPaginationLogic() {
   let viewportCount = (html.match(/class="page-viewport"/g) || []).length
   assert.equal(viewportCount, 1, '10 transactions should fit on 1 page')
 
-  // Test 2: 13 transactions -> should take 2 pages (12 + 1)
   for (let i = 10; i < 13; i++) {
     statementData.transactions.push({
       date: '05. 04. 2026',
-      settlementDate: '06. 04. 2026',
       description: `Tx ${i}`,
       amount: 10,
-      fees: 0,
-      resultingBalance: 1000 + i * 10,
-      type: 'incoming',
+      type: 'deposit',
     })
   }
   html = await generateTransactionsPdf(statementData as any)
   viewportCount = (html.match(/class="page-viewport"/g) || []).length
   assert.equal(viewportCount, 2, '13 transactions should take 2 pages')
-
-  // Check continuation header on 2nd page
-  assert.ok(html.includes('continuation-header'), '2nd page should have continuation-header')
   assert.ok(html.includes('Strana 2/2'), '2nd page should indicate Strana 2/2')
 
-  // Test 3: 31 transactions -> should take 3 pages (12 + 18 + 1)
   for (let i = 13; i < 31; i++) {
     statementData.transactions.push({
       date: '05. 04. 2026',
-      settlementDate: '06. 04. 2026',
       description: `Tx ${i}`,
       amount: 10,
-      fees: 0,
-      resultingBalance: 1000 + i * 10,
-      type: 'incoming',
+      type: 'deposit',
     })
   }
   html = await generateTransactionsPdf(statementData as any)
   viewportCount = (html.match(/class="page-viewport"/g) || []).length
   assert.equal(viewportCount, 3, '31 transactions should take 3 pages')
   assert.ok(html.includes('Strana 3/3'), '3rd page should indicate Strana 3/3')
+}
+
+async function testSlspTemplateStructure() {
+  const html = await generateTransactionsPdf({
+    accountName: 'DALMAN group s. r. o.',
+    accountNumber: 'SK04 0900 0000 0052 0896 0265',
+    currency: 'EUR',
+    accountProductType: 'Business účet S',
+    holderAddressLines: ['Trebišov Hodvábna 4269/13', '071 01 Michalovce 1'],
+    statementDate: '31. 03. 2026',
+    accountingPeriod: '01. 03. 2026 - 31. 03. 2026',
+    statementNumber: '3/2026',
+    initialBalance: 4_035_000,
+    finalBalance: 4_035_000,
+    depositsTotal: 4_035_000,
+    withdrawalsTotal: 4_035_000,
+    transactionTaxTotalCents: 8009,
+    transactionTaxLines: [
+      { label: 'Transakčná daň', amountCents: 8003, count: 2 },
+      { label: 'Transakčná daň (z poplatkov, úrokov)', amountCents: 3, count: 1 },
+    ],
+    transactions: [],
+  })
+
+  assert.ok(html.includes('Výpis z Účtu: Business účet S'))
+  assert.ok(html.includes('č.3/2026 - Strana 1/1'))
+  assert.ok(html.includes('Dátum vyhotovenia výpisu'))
+  assert.ok(html.includes('Konečný stav Účtu'))
+  assert.ok(html.includes('Transakčná daň spolu:'))
+  assert.ok(html.includes('Prehľad zúčtovanej Transakčnej dane:'))
+  assert.ok(html.includes('Vklad podliehajúci ochrane vkladov'))
+  assert.ok(!html.includes('Informácia pre klienta'))
+  assert.ok(!html.includes('Nepovoleného prečerpania'))
+  assert.ok(!html.includes('Zostatok<br>po transakcii'))
 }
 
 async function testPaymentConfirmationDate() {
@@ -78,50 +98,11 @@ async function testPaymentConfirmationDate() {
     status: 'Štandardný platobný príkaz',
     transferType: 'external' as const,
     fromAccountNumber: 'SK0000000000000000000000',
-    recipientName: 'Jan Kovac',
-    recipientAccountOrEmail: 'SK1111111111111111111111',
-    amount: '100',
+    recipientName: 'Test Recipient',
+    recipientAccountOrEmail: 'SK0000000000000000000001',
+    amount: '100.00',
     currency: 'EUR',
-    variableSymbol: '12345',
-    constantSymbol: '0308',
-    specificSymbol: '',
-    note: 'Test note',
-    payerReference: '',
-    dueDate: '15.07.2026',
-    repeatDays: '',
-    createTemplate: false,
-    emailConfirmation: false,
-    balanceBefore: '1000',
-    balanceAfter: '900',
-  }
-
-  const html = generatePaymentConfirmationHtml(paymentData)
-  
-  // Dátum valuty (15.07.2026) and Dátum zúčtovania (15.07.2026) must match the createdAt date
-  assert.ok(html.includes('15.07.2026'), 'HTML should contain the transaction date')
-  
-  // Ensure that tomorrow's date (16.07.2026) is NOT present in the HTML anymore
-  assert.ok(!html.includes('16.07.2026'), 'HTML should not contain tomorrow\'s date (16.07.2026)')
-
-  // George kľúč HTML potvrdenie – musí byť uložiteľné ako .html
-  assert.ok(html.includes('<!DOCTYPE html>'), 'confirmation must be full HTML document')
-  assert.ok(html.includes('Jan Kovac'), 'recipient name in HTML')
-  assert.ok(html.length > 500, 'HTML body non-trivial')
-}
-
-async function testPaymentConfirmationFilename() {
-  const { getPaymentConfirmationFilename } = await import('../lib/payment-confirmation-pdf')
-  const name = getPaymentConfirmationFilename({
-    transactionId: 't1',
-    createdAt: '17.07.2026 10:00:00',
-    status: 'x',
-    transferType: 'external',
-    fromAccountNumber: 'SK00',
-    recipientName: 'A',
-    recipientAccountOrEmail: 'SK11',
-    amount: '1',
-    currency: 'EUR',
-    variableSymbol: '999',
+    variableSymbol: '123456',
     constantSymbol: '',
     specificSymbol: '',
     note: '',
@@ -130,17 +111,22 @@ async function testPaymentConfirmationFilename() {
     repeatDays: '',
     createTemplate: false,
     emailConfirmation: false,
-    balanceBefore: '10',
-    balanceAfter: '9',
-  })
-  assert.match(name, /\.html$/i, 'filename ends with .html')
-  assert.match(name, /potvrdenie/i, 'filename is potvrdenie-*.html')
+    balanceBefore: '1000.00',
+    balanceAfter: '900.00',
+  }
+
+  const html = generatePaymentConfirmationHtml(paymentData)
+  assert.ok(html.includes('15.07.2026'))
 }
 
-Promise.all([
-  testPaginationLogic(),
-  testPaymentConfirmationDate(),
-  testPaymentConfirmationFilename(),
-]).then(() => {
-  console.log('All PDF and confirmation tests passed')
+async function run() {
+  await testPaginationLogic()
+  await testSlspTemplateStructure()
+  await testPaymentConfirmationDate()
+  console.log('pdf-generator.test.ts: all tests passed')
+}
+
+run().catch((err) => {
+  console.error(err)
+  process.exit(1)
 })

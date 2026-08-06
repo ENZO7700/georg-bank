@@ -1,27 +1,47 @@
 export interface TransactionRow {
   id: string
-  date: string // createdAt formatted
+  date: string
   type: string
   description: string | null
-  amount: number // in cents
-  balanceAfter: number | null // in cents
+  amount: number
+  balanceAfter: number | null
+}
+
+export interface TransactionTaxLine {
+  label: string
+  amountCents: number
+  count: number
 }
 
 export interface TransactionsPdfInput {
   accountName: string
   accountNumber: string
   currency: string
-  dateCreated: string
+  accountProductType?: string
+  holderAddressLines?: string[]
+  statementDate: string
+  accountingPeriod: string
+  statementNumber?: string
   transactions: TransactionRow[]
-  initialBalance: number // in cents
-  finalBalance: number // in cents
-  depositsTotal: number // in cents
-  withdrawalsTotal: number // in cents
+  initialBalance: number
+  finalBalance: number
+  depositsTotal: number
+  withdrawalsTotal: number
+  transactionTaxTotalCents?: number
+  transactionTaxLines?: TransactionTaxLine[]
+  /** @deprecated Prefer statementDate + accountingPeriod */
+  dateCreated?: string
 }
 
 function formatBalance(valCents: number): string {
   const val = valCents / 100
   return val.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+}
+
+function formatSignedBalance(valCents: number): string {
+  if (valCents === 0) return formatBalance(0)
+  const prefix = valCents < 0 ? '- ' : ''
+  return `${prefix}${formatBalance(Math.abs(valCents))}`
 }
 
 function formatIban(ibanStr: string): string {
@@ -34,190 +54,170 @@ function formatIban(ibanStr: string): string {
   return parts.join(' ')
 }
 
-function getBicFromIban(ibanStr: string): string {
+export function getBicFromIban(ibanStr: string): string {
   const cleanIban = ibanStr.replace(/\s+/g, '').toUpperCase()
   if (cleanIban.startsWith('SK') && cleanIban.length >= 8) {
     const bankCode = cleanIban.substring(4, 8)
     const bicMap: Record<string, string> = {
-      '0900': 'GIBASKBX', // Slovenská sporiteľňa (SLSP)
-      '0200': 'SUBASKBX', // VÚB banka
-      '1100': 'TATRSKBX', // Tatra banka
-      '1111': 'UNCRSKBX', // UniCredit Bank
-      '5600': 'KOISSKBX', // Prima banka
-      '7500': 'CEKOSKBX', // ČSOB
-      '8360': 'FIOZSKBA', // Fio banka
-      '8330': 'FIOZSKBA', // Fio banka
-      '6500': '3650SKBX', // 365.bank
-      '5200': 'OTPVSKBX', // OTP Banka
-      '0720': 'NBSKSRBA', // NBS
+      '0900': 'GIBASKBX',
+      '0200': 'SUBASKBX',
+      '1100': 'TATRSKBX',
+      '1111': 'UNCRSKBX',
+      '5600': 'KOISSKBX',
+      '7500': 'CEKOSKBX',
+      '8360': 'FIOZSKBA',
+      '8330': 'FIOZSKBA',
+      '6500': '3650SKBX',
+      '5200': 'OTPVSKBX',
+      '0720': 'NBSKSRBA',
     }
     return bicMap[bankCode] || ''
   }
   return ''
 }
 
-export async function generateTransactionsPdf(data: TransactionsPdfInput): Promise<string> {
-  const formattedSenderIban = formatIban(data.accountNumber)
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
 
-  // Build individual row HTML strings
-  const rowHtmlList: string[] = []
-  
-  for (const txn of data.transactions) {
-    const isDeposit = txn.type === 'deposit'
-    const name = isDeposit ? 'Prichádzajúci štandardný príkaz' : 'Odoslaný štandardný príkaz'
-    let note = ''
-    
-    if (txn.description && txn.description.includes('|')) {
-       const parts = txn.description.split('|')
-       let recipient = parts[0]?.trim() || ''
-       const userNote = parts[1]?.trim() || ''
-       
-       const cleanRecipient = recipient.replace(/\s+/g, '').toUpperCase()
-       if (cleanRecipient.startsWith('SK') && cleanRecipient.length >= 20) {
-         const formatted = formatIban(cleanRecipient)
-         const bic = getBicFromIban(cleanRecipient)
-         recipient = formatted + (bic ? ` BIC: ${bic}` : '')
-       }
-       
-       if (recipient && userNote) {
-         note = `${recipient} - ${userNote}`
-       } else if (recipient) {
-         note = recipient
-       } else if (userNote) {
-         note = userNote
-       }
-    } else if (txn.description) {
-       let desc = txn.description.trim()
-       const cleanDesc = desc.replace(/\s+/g, '').toUpperCase()
-       if (cleanDesc.startsWith('SK') && cleanDesc.length >= 20) {
-         const formatted = formatIban(cleanDesc)
-         const bic = getBicFromIban(cleanDesc)
-         desc = formatted + (bic ? ` BIC: ${bic}` : '')
-       }
-       note = desc
+function normalizePdfInput(data: TransactionsPdfInput): Required<
+  Pick<
+    TransactionsPdfInput,
+    | 'accountProductType'
+    | 'holderAddressLines'
+    | 'statementDate'
+    | 'accountingPeriod'
+    | 'statementNumber'
+    | 'transactionTaxTotalCents'
+    | 'transactionTaxLines'
+  >
+> {
+  const statementDate = data.statementDate || data.dateCreated || ''
+  const accountingPeriod = data.accountingPeriod || statementDate
+  const statementNumber =
+    data.statementNumber ||
+    (() => {
+      const match = accountingPeriod.match(/(\d{2})\.\s*(\d{2})\.\s*(\d{4})\s*-\s*(\d{2})\.\s*(\d{2})\.\s*(\d{4})/)
+      if (match) {
+        const month = Number(match[5])
+        const year = match[6]
+        return `${month}/${year}`
+      }
+      return '1/2026'
+    })()
+
+  const taxLines = data.transactionTaxLines ?? []
+  const taxTotal =
+    data.transactionTaxTotalCents ??
+    (taxLines.length > 0
+      ? taxLines.reduce((sum, line) => sum + line.amountCents, 0)
+      : 0)
+
+  return {
+    accountProductType: data.accountProductType || 'Business účet S',
+    holderAddressLines: data.holderAddressLines?.length
+      ? data.holderAddressLines
+      : [],
+    statementDate,
+    accountingPeriod,
+    statementNumber,
+    transactionTaxTotalCents: taxTotal,
+    transactionTaxLines: taxLines,
+  }
+}
+
+function buildTransactionDescription(txn: TransactionRow) {
+  const isDeposit = txn.type === 'deposit'
+  const name = isDeposit ? 'Prichádzajúci štandardný príkaz' : 'Odoslaný štandardný príkaz'
+  let note = ''
+
+  if (txn.description && txn.description.includes('|')) {
+    const parts = txn.description.split('|')
+    let recipient = parts[0]?.trim() || ''
+    const userNote = parts[1]?.trim() || ''
+
+    const cleanRecipient = recipient.replace(/\s+/g, '').toUpperCase()
+    if (cleanRecipient.startsWith('SK') && cleanRecipient.length >= 20) {
+      const formatted = formatIban(cleanRecipient)
+      const bic = getBicFromIban(cleanRecipient)
+      recipient = formatted + (bic ? ` BIC: ${bic}` : '')
     }
 
-    const amountStr = (isDeposit ? '' : '- ') + formatBalance(txn.amount)
-    const balanceAfterStr = txn.balanceAfter !== null ? formatBalance(txn.balanceAfter) : ''
+    if (recipient && userNote) note = `${recipient} - ${userNote}`
+    else if (recipient) note = recipient
+    else if (userNote) note = userNote
+  } else if (txn.description) {
+    let desc = txn.description.trim()
+    const cleanDesc = desc.replace(/\s+/g, '').toUpperCase()
+    if (cleanDesc.startsWith('SK') && cleanDesc.length >= 20) {
+      const formatted = formatIban(cleanDesc)
+      const bic = getBicFromIban(cleanDesc)
+      desc = formatted + (bic ? ` BIC: ${bic}` : '')
+    }
+    note = desc
+  }
 
-    rowHtmlList.push(`
-        <div class="transaction-row" style="margin-bottom: 12px;">
-          <div class="body-cell cell-left">${txn.date}</div>
-          <div class="body-cell cell-left">${txn.date}</div>
+  return { name, note, isDeposit }
+}
+
+function buildTransactionRowHtml(txn: TransactionRow): string {
+  const { name, note, isDeposit } = buildTransactionDescription(txn)
+  const amountStr = (isDeposit ? '' : '- ') + formatBalance(txn.amount)
+
+  return `
+        <div class="transaction-row">
+          <div class="body-cell cell-left">${escapeHtml(txn.date)}</div>
+          <div class="body-cell cell-left">${escapeHtml(txn.date)}</div>
           <div class="body-cell cell-left popis-cell">
-            <span class="popis-title">${name}</span>
-            ${note ? `<span class="popis-subtext">${note}</span>` : ''}
+            <span class="popis-title">${escapeHtml(name)}</span>
+            ${note ? `<span class="popis-subtext">${escapeHtml(note)}</span>` : ''}
           </div>
           <div class="body-cell cell-right">${amountStr}</div>
           <div class="body-cell cell-right">0,00</div>
-          <div class="body-cell cell-right">${balanceAfterStr}</div>
-        </div>`)
-  }
+        </div>`
+}
 
-  // Pagination: 12 transactions on page 1, 18 on continuation pages
-  const ROWS_PAGE_1 = 12
-  const ROWS_PER_CONTINUATION = 18
+function buildDetailsBox(data: TransactionsPdfInput, formattedIban: string, bic: string) {
+  const normalized = normalizePdfInput(data)
 
-  const pages: string[][] = []
-  if (rowHtmlList.length <= ROWS_PAGE_1) {
-    pages.push(rowHtmlList)
-  } else {
-    pages.push(rowHtmlList.slice(0, ROWS_PAGE_1))
-    let offset = ROWS_PAGE_1
-    while (offset < rowHtmlList.length) {
-      pages.push(rowHtmlList.slice(offset, offset + ROWS_PER_CONTINUATION))
-      offset += ROWS_PER_CONTINUATION
-    }
-  }
-
-  // Height for transaction box: page 1 fits 12 rows, continuation fits 18 rows
-  const PAGE1_BOX_HEIGHT = '690px'
-  const CONTINUATION_BOX_HEIGHT = '1020px'
-
-  // Table header HTML (shared)
-  const tableHeaderHtml = `
-      <div class="table-header">
-        <div class="header-cell cell-left">Dátum<br>valuty</div>
-        <div class="header-cell cell-left">Dátum<br>zúčtovania</div>
-        <div class="header-cell cell-left">Popis<br>transakcie</div>
-        <div class="header-cell cell-right">Suma<br>transakcie</div>
-        <div class="header-cell cell-right">Suma<br>poplatku</div>
-        <div class="header-cell cell-right">Zostatok<br>po transakcii</div>
-      </div>`
-
-  const footerHtml = `
-    <div class="footer">
-      <div class="footer-item">info@slsp.sk</div>
-      <div class="footer-item">Klientske centrum: 0850 111 888</div>
-      <div class="footer-item">www.slsp.sk</div>
-    </div>`
-
-  // Build page HTML
-  let pagesHtml = ''
-
-  for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
-    const pageRows = pages[pageIdx]
-    const isFirstPage = pageIdx === 0
-    const boxHeight = isFirstPage ? PAGE1_BOX_HEIGHT : CONTINUATION_BOX_HEIGHT
-    const pageNumber = pageIdx + 1
-    const totalPages = pages.length
-
-    const emptyRowsHtml = pageRows.length === 0
-      ? `<div style="text-align: center; font-size: 14px; padding: 20px 0; color: #1a1919;">Žiadne transakcie v tomto období.</div>`
-      : ''
-
-    if (isFirstPage) {
-      pagesHtml += `
-  <div class="page-viewport">
-    <div class="page">
-    <div class="vertical-text">MO10_v203_1000280073</div>
-    <div class="header-section">
-      <div class="logo-row">
-        <div class="logo-text-col">
-          <div class="logo-main-row">
-            <span class="logo-title">SLOVENSKÁ</span>
-          </div>
-          <span class="logo-subtitle">sporiteľňa</span>
-        </div>
-      </div>
-      <div class="bank-details">
-        Slovenská sporiteľňa, a.s.<br>
-        Tomášikova 48, 832 37 Bratislava<br>
-        IČO 00 151 653, zapísaná v Obchodnom registri<br>
-        Mestského súdu Bratislava III., oddiel Sa, vložka č. 601/B
-      </div>
-    </div>
-
-    <div class="document-title">Výpis z Účtu:</div>
-
+  return `
     <div class="details-box">
       <div class="details-col">
         <div class="details-row row-large">
           <span class="marker"></span>
           <span class="label">Názov Účtu</span>
-          <span class="value value-large">${data.accountName}</span>
+          <span class="value value-large">${escapeHtml(data.accountName)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Číslo Účtu</span>
-          <span class="value">${formattedSenderIban}</span>
+          <span class="value">${formattedIban}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">BIC</span>
-          <span class="value value-right">GIBASKBX</span>
+          <span class="value value-right">${escapeHtml(bic || 'GIBASKBX')}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Mena</span>
-          <span class="value value-right">${data.currency}</span>
+          <span class="value value-right">${escapeHtml(data.currency)}</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Dátum vyhotovenia výpisu</span>
+          <span class="value value-right">${escapeHtml(normalized.statementDate)}</span>
         </div>
       </div>
       <div class="details-col">
         <div class="details-row">
           <span class="marker"></span>
           <span class="label">Účtovné obdobie</span>
-          <span class="value">${data.dateCreated}</span>
+          <span class="value">${escapeHtml(normalized.accountingPeriod)}</span>
         </div>
         <div class="details-row">
           <span class="marker"></span>
@@ -234,69 +234,162 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
           <span class="label">Výbery spolu</span>
           <span class="value">- ${formatBalance(data.withdrawalsTotal)}</span>
         </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Konečný stav Účtu</span>
+          <span class="value">${formatBalance(data.finalBalance)}</span>
+        </div>
       </div>
-    </div>
+    </div>`
+}
 
-    <div class="info-section">
-      <div class="info-title-row">
-        <span class="marker"></span>
-        <span class="info-title">Informácia pre klienta</span>
+function buildTaxBreakdownHtml(lines: TransactionTaxLine[]) {
+  if (lines.length === 0) {
+    return `
+    <div class="tax-breakdown">
+      <div class="tax-breakdown-title">Prehľad zúčtovanej Transakčnej dane:</div>
+      <div class="tax-breakdown-row">
+        <span class="tax-label">Transakčná daň:</span>
+        <span class="tax-amount">${formatSignedBalance(0)}</span>
       </div>
-      <div class="info-body">
-        Vyzývame Vás na úhradu Nepovoleného prečerpania evidovaného na Vašom Účte.
-      </div>
-    </div>
+    </div>`
+  }
 
-    <div class="table-container">
-      ${tableHeaderHtml}
-      <div class="transaction-box" style="height: ${boxHeight};">
-        ${emptyRowsHtml}${pageRows.join('')}
-      </div>
-    </div>
+  const rows = lines
+    .map(
+      (line) => `
+      <div class="tax-breakdown-row">
+        <span class="tax-label">${escapeHtml(line.label)}:</span>
+        <span class="tax-amount">${formatSignedBalance(-Math.abs(line.amountCents))}</span>
+        <span class="tax-count">(${line.count} ks)</span>
+      </div>`,
+    )
+    .join('')
 
-      ${footerHtml}
-    </div>
-  </div>`
-    } else {
-      // Continuation page: header with statement number, page number, and mini details bar
-      pagesHtml += `
+  return `
+    <div class="tax-breakdown">
+      <div class="tax-breakdown-title">Prehľad zúčtovanej Transakčnej dane:</div>
+      ${rows}
+    </div>`
+}
+
+function buildHolderAddressHtml(accountName: string, lines: string[]) {
+  const addressLines =
+    lines.length > 0 ? lines : [accountName]
+  return addressLines.map((line) => `<div>${escapeHtml(line)}</div>`).join('')
+}
+
+const TABLE_HEADER_HTML = `
+      <div class="table-header">
+        <div class="header-cell cell-left">Dátum<br>valuty</div>
+        <div class="header-cell cell-left">Dátum<br>zúčtovania</div>
+        <div class="header-cell cell-left">Popis<br>transakcie</div>
+        <div class="header-cell cell-right">Suma<br>transakcie</div>
+        <div class="header-cell cell-right">Suma<br>poplatku</div>
+      </div>`
+
+const FOOTER_HTML = `
+    <div class="footer">
+      <div class="footer-item">info@slsp.sk</div>
+      <div class="footer-item">Klientske centrum: 0850 111 888</div>
+      <div class="footer-item">www.slsp.sk</div>
+    </div>`
+
+const LEGAL_NOTICE_HTML = `
+    <div class="legal-notice">
+      Vklad podliehajúci ochrane vkladov v súlade so zákonom. Viac informácií získate v Informačnom formulári
+      pre vkladateľa, ktorý Vám bol doručený alebo odovzdaný.
+    </div>`
+
+const BANK_BLOCK_HTML = `
+      <div class="bank-block">
+        Slovenská sporiteľňa, a.s.<br>
+        Tomášikova 48, 832 37 Bratislava<br>
+        IČO 00 151 653, zapísaná v Obchodnom registri<br>
+        Mestského súdu Bratislava III., oddiel Sa, vložka č. 601/B
+      </div>`
+
+export async function generateTransactionsPdf(data: TransactionsPdfInput): Promise<string> {
+  const normalized = normalizePdfInput(data)
+  const formattedSenderIban = formatIban(data.accountNumber)
+  const bic = getBicFromIban(data.accountNumber)
+
+  const rowHtmlList = data.transactions.map(buildTransactionRowHtml)
+
+  const ROWS_PAGE_1 = 12
+  const ROWS_PER_CONTINUATION = 18
+  const PAGE1_BOX_HEIGHT = '520px'
+  const CONTINUATION_BOX_HEIGHT = '860px'
+
+  const pages: string[][] = []
+  if (rowHtmlList.length <= ROWS_PAGE_1) {
+    pages.push(rowHtmlList)
+  } else {
+    pages.push(rowHtmlList.slice(0, ROWS_PAGE_1))
+    let offset = ROWS_PAGE_1
+    while (offset < rowHtmlList.length) {
+      pages.push(rowHtmlList.slice(offset, offset + ROWS_PER_CONTINUATION))
+      offset += ROWS_PER_CONTINUATION
+    }
+  }
+
+  let pagesHtml = ''
+
+  for (let pageIdx = 0; pageIdx < pages.length; pageIdx += 1) {
+    const pageRows = pages[pageIdx]
+    const isFirstPage = pageIdx === 0
+    const boxHeight = isFirstPage ? PAGE1_BOX_HEIGHT : CONTINUATION_BOX_HEIGHT
+    const pageNumber = pageIdx + 1
+    const totalPages = pages.length
+    const pageMeta = `č.${normalized.statementNumber} - Strana ${pageNumber}/${totalPages}`
+
+    const emptyRowsHtml =
+      pageRows.length === 0
+        ? `<div class="empty-rows">Žiadne transakcie v tomto období.</div>`
+        : ''
+
+    const taxTotalHtml = isFirstPage
+      ? `
+    <div class="tax-total-row">
+      <span class="tax-total-label">Transakčná daň spolu:</span>
+      <span class="tax-total-value">${formatSignedBalance(-Math.abs(normalized.transactionTaxTotalCents))} EUR</span>
+    </div>`
+      : ''
+
+    const detailsHtml = isFirstPage ? buildDetailsBox(data, formattedSenderIban, bic) : ''
+    const titleHtml = isFirstPage
+      ? `<div class="document-title">Výpis z Účtu: ${escapeHtml(normalized.accountProductType)}</div>`
+      : ''
+    const headerAddressHtml = isFirstPage
+      ? `<div class="holder-address">${buildHolderAddressHtml(data.accountName, normalized.holderAddressLines)}</div>`
+      : `<div class="holder-address continuation-account">${formattedSenderIban} · ${escapeHtml(data.currency)} · ${escapeHtml(normalized.accountingPeriod)}</div>`
+
+    pagesHtml += `
   <div class="page-viewport">
     <div class="page">
-    <div class="vertical-text">MO10_v203_1000280073</div>
-    <div class="continuation-header">
-      <div class="continuation-title">č. 4/2026</div>
-      <div class="continuation-page">Strana ${pageNumber}/${totalPages}</div>
-    </div>
-    
-    <div class="mini-details-bar">
-      <div class="mini-details-item">
-        <span class="marker"></span>
-        <span class="mini-label">Číslo Účtu</span>
-        <span class="mini-value">${formattedSenderIban}</span>
-      </div>
-      <div class="mini-details-item">
-        <span class="marker"></span>
-        <span class="mini-label">Mena</span>
-        <span class="mini-value">${data.currency}</span>
-      </div>
-      <div class="mini-details-item">
-        <span class="marker"></span>
-        <span class="mini-label">Účtovné obdobie</span>
-        <span class="mini-value">01. 04. 2026 – 30. 04. 2026</span>
-      </div>
-    </div>
+      <div class="page-meta">${pageMeta}</div>
 
-    <div class="table-container">
-      ${tableHeaderHtml}
-      <div class="transaction-box" style="height: ${CONTINUATION_BOX_HEIGHT};">
-        ${pageRows.join('')}
+      <div class="header-row">
+        ${isFirstPage ? BANK_BLOCK_HTML : `<div class="bank-block bank-block-compact">Slovenská sporiteľňa, a.s.</div>`}
+        ${headerAddressHtml}
       </div>
-    </div>
 
-    ${footerHtml}
+      ${titleHtml}
+      ${detailsHtml}
+      ${taxTotalHtml}
+
+      <div class="table-container">
+        ${TABLE_HEADER_HTML}
+        <div class="transaction-box" style="min-height: ${boxHeight};">
+          ${emptyRowsHtml}${pageRows.join('')}
+        </div>
+      </div>
+
+      ${isFirstPage ? buildTaxBreakdownHtml(normalized.transactionTaxLines) : ''}
+      ${isFirstPage ? LEGAL_NOTICE_HTML : ''}
+      ${FOOTER_HTML}
     </div>
   </div>`
-    }
   }
 
   return `<!DOCTYPE html>
@@ -305,24 +398,15 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Výpis z účtu</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background-color: #f0f2f5;
       display: flex;
       flex-direction: column;
       min-height: 100vh;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: Arial, Helvetica, sans-serif;
       color: #1a1919;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
       gap: 40px;
       padding: 40px 20px;
       overflow-x: auto;
@@ -345,164 +429,72 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
       position: absolute;
       top: 0;
       left: 0;
-      padding-top: 66px;
-      padding-bottom: 44px;
-      padding-left: 78px;
-      padding-right: 70px;
+      padding: 48px 58px 40px 68px;
       display: flex;
       flex-direction: column;
       transform-origin: top left;
       transform: scale(calc(100cqw / 876));
     }
-    @media print {
-      body {
-        padding: 0;
-      }
-      .page-viewport {
-        aspect-ratio: auto;
-        contain: none;
-        width: 876px;
-        height: 1199px;
-      }
-      .page {
-        position: relative;
-        transform: none !important;
-        box-shadow: none;
-        margin: 0 !important;
-      }
+    .page-meta {
+      text-align: right;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 18px;
     }
-    .vertical-text {
-      position: absolute;
-      left: 58px;
-      bottom: 108px;
-      transform: rotate(-90deg);
-      transform-origin: left bottom;
-      color: #a6b2b9;
-      font-size: 8px;
-      font-weight: 500;
-      letter-spacing: 0.5px;
-      font-family: 'Inter', sans-serif;
+    .header-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 18px;
+      align-items: start;
     }
-    .header-section {
-      margin-bottom: 22px;
-    }
-    .logo-row {
-      display: flex;
-      align-items: flex-start;
-      margin-bottom: 16px;
-    }
-    .logo-text-col {
-      display: flex;
-      flex-direction: column;
-      line-height: 1;
-    }
-    .logo-main-row {
-      display: flex;
-      align-items: flex-end;
-    }
-    .logo-title {
-      font-size: 27px;
-      font-weight: 900;
-      color: #1a1919;
-      letter-spacing: -0.5px;
-    }
-    .logo-icon-wrapper {
-      margin-left: 10px;
-      display: flex;
-      align-items: center;
-    }
-    .erste-symbol {
-      width: 32px;
-      height: 32px;
-    }
-    .logo-subtitle {
-      font-size: 21px;
-      font-weight: 500;
-      color: #1a1919;
-      margin-top: -2px;
-      letter-spacing: -0.3px;
-    }
-    .bank-details {
+    .bank-block {
       font-size: 9.5px;
-      color: #1a1919;
-      line-height: 1.4;
+      line-height: 1.45;
       font-weight: 500;
+    }
+    .bank-block-compact {
+      font-size: 11px;
+      font-weight: 700;
+      padding-top: 8px;
+    }
+    .holder-address {
+      text-align: right;
+      font-size: 11px;
+      line-height: 1.45;
+      font-weight: 500;
+    }
+    .continuation-account {
+      font-size: 10px;
+      font-weight: 700;
     }
     .document-title {
       font-size: 19px;
       font-weight: 700;
-      color: #1a1919;
-      margin-bottom: 6px;
-    }
-    .continuation-header {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      margin-bottom: 18px;
-      line-height: 1.3;
-    }
-    .continuation-title {
-      font-size: 11px;
-      font-weight: 700;
-      color: #1a1919;
-    }
-    .continuation-page {
-      font-size: 11px;
-      font-weight: 700;
-      color: #1a1919;
-    }
-    .mini-details-bar {
-      display: flex;
-      align-items: center;
-      background-color: #d4e0e2;
-      border-radius: 6px;
-      padding: 6px 12px;
-      margin-bottom: 12px;
-      gap: 16px;
-    }
-    .mini-details-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .mini-label {
-      font-size: 10px;
-      font-weight: 700;
-      color: #1a1919;
-    }
-    .mini-value {
-      font-size: 10px;
-      color: #1a1919;
+      margin-bottom: 10px;
     }
     .details-box {
       background-color: #d4e0e2;
       border-radius: 6px;
-      padding: 10px 14px 12px 14px;
+      padding: 10px 14px 12px;
       display: grid;
       grid-template-columns: 1.08fr 1fr;
-      grid-column-gap: 28px;
-      box-sizing: border-box;
-      height: 102px;
-      margin-bottom: 39px;
+      gap: 28px;
+      margin-bottom: 12px;
     }
     .details-col {
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
+      gap: 4px;
     }
     .details-row {
       display: flex;
       align-items: center;
-      position: relative;
-      padding-bottom: 2px;
       border-bottom: 1.5px solid #8a9fac;
-      height: 20px;
-      box-sizing: border-box;
+      min-height: 20px;
+      padding-bottom: 2px;
     }
-    .details-row.row-large {
-      height: 24px;
-      padding-bottom: 3px;
-    }
+    .details-row.row-large { min-height: 24px; }
     .marker {
       width: 10px;
       height: 10px;
@@ -514,51 +506,29 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
     .label {
       font-size: 11px;
       font-weight: 700;
-      color: #1a1919;
     }
     .value {
       font-size: 11px;
       font-weight: 700;
-      color: #1a1919;
       margin-left: auto;
+      text-align: right;
     }
     .value-large {
       font-size: 16px;
       font-weight: 900;
-      color: #000000;
-      margin-left: 6px;
     }
-    .value-right {
-      margin-left: auto;
-    }
-    .info-section {
-      margin-bottom: 7px;
+    .value-right { margin-left: auto; }
+    .tax-total-row {
       display: flex;
-      flex-direction: column;
-    }
-    .info-title-row {
-      display: flex;
-      align-items: center;
-      border-bottom: 1.5px solid #8a9fac;
-      width: 326px;
-      padding-bottom: 2px;
-      margin-bottom: 10px;
-    }
-    .info-title {
+      justify-content: flex-end;
+      align-items: baseline;
+      gap: 12px;
+      margin: 8px 0 14px;
       font-size: 11px;
       font-weight: 700;
-      color: #1a1919;
     }
-    .info-body {
-      font-size: 12.5px;
-      color: #1a1919;
-      line-height: 1.4;
-      font-weight: 500;
-    }
-    .table-container {
-      display: flex;
-      flex-direction: column;
-    }
+    .tax-total-value { min-width: 120px; text-align: right; }
+    .table-container { margin-bottom: 16px; }
     .table-header {
       background-color: #d4e0e2;
       border: 1px solid #4e4f4f;
@@ -566,84 +536,90 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
       border-top-right-radius: 8px;
       height: 37px;
       display: grid;
-      grid-template-columns: 85px 95px 1fr 90px 80px 105px;
-      box-sizing: border-box;
+      grid-template-columns: 85px 95px 1fr 95px 80px;
       align-items: center;
       padding: 0 12px;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
+      gap: 8px;
     }
     .header-cell {
       font-size: 10px;
       font-weight: 800;
-      color: #1a1919;
       line-height: 1.1;
     }
-    .cell-left {
-      text-align: left;
-    }
-    .cell-right {
-      text-align: right;
-    }
+    .cell-left { text-align: left; }
+    .cell-right { text-align: right; }
     .transaction-box {
       border: 1px solid #4e4f4f;
       border-radius: 8px;
-      box-sizing: border-box;
       padding: 12px;
       background-color: #ffffff;
-      margin-bottom: 49px;
     }
     .transaction-row {
       display: grid;
-      grid-template-columns: 85px 95px 1fr 90px 80px 105px;
+      grid-template-columns: 85px 95px 1fr 95px 80px;
       align-items: start;
-      box-sizing: border-box;
+      gap: 8px;
+      margin-bottom: 12px;
       page-break-inside: avoid;
     }
     .body-cell {
       font-size: 12px;
-      color: #1a1919;
       line-height: 1.25;
+      word-break: break-word;
     }
-    .popis-cell {
-      display: flex;
-      flex-direction: column;
-    }
-    .popis-title {
-      font-weight: 700;
-      margin-bottom: 2px;
-    }
-    .popis-subtext {
-      font-size: 11px;
+    .popis-cell { display: flex; flex-direction: column; }
+    .popis-title { font-weight: 700; margin-bottom: 2px; }
+    .popis-subtext { font-size: 11px; font-weight: 400; }
+    .empty-rows {
+      text-align: center;
+      font-size: 14px;
+      padding: 20px 0;
       color: #1a1919;
-      font-weight: 400;
+    }
+    .tax-breakdown {
+      margin-bottom: 14px;
+      font-size: 11px;
+    }
+    .tax-breakdown-title {
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .tax-breakdown-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    .tax-label { font-weight: 500; }
+    .tax-amount { font-weight: 700; text-align: right; min-width: 90px; }
+    .tax-count { font-weight: 500; min-width: 48px; }
+    .legal-notice {
+      font-size: 9.5px;
+      line-height: 1.45;
+      margin-bottom: 18px;
+      max-width: 92%;
     }
     .footer {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      box-sizing: border-box;
-      padding: 0 2px;
       margin-top: auto;
+      gap: 10px;
+      flex-wrap: wrap;
     }
     .footer-item {
       font-size: 11px;
       font-weight: 700;
-      color: #1a1919;
     }
     @media print {
-      body {
-        background-color: #ffffff;
-        gap: 0;
-        padding: 0;
-        overflow-x: visible;
-      }
+      body { background-color: #ffffff; gap: 0; padding: 0; overflow-x: visible; }
+      .page-viewport { aspect-ratio: auto; width: 876px; height: 1199px; }
       .page {
-        width: 876px !important;
-        min-height: 1199px;
-        box-shadow: none;
-        page-break-after: always;
-        margin: 0 !important;
+        position: relative;
         transform: none !important;
+        box-shadow: none;
+        margin: 0 !important;
       }
     }
   </style>
@@ -653,4 +629,3 @@ export async function generateTransactionsPdf(data: TransactionsPdfInput): Promi
 </body>
 </html>`
 }
-

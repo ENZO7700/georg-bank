@@ -7,6 +7,7 @@ import { db } from '@/lib/db'
 import { transaction } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { generateTransactionsPdf } from '@/lib/generate-transactions-pdf'
+import { formatSlspStatementDate, formatSlspStatementNumber } from '@/lib/format-date'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 // Configure Web Push with VAPID keys from env
@@ -52,14 +53,22 @@ export async function POST(req: Request) {
     })
 
     // Prepare inputs for the SLSP PDF generator
-    const dateFormatted = txnRecord.createdAt.toLocaleDateString('sk-SK', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\s/g, '')
+    const dateFormatted = txnRecord.createdAt.toLocaleDateString('sk-SK', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      timeZone: 'Europe/Bratislava',
+    }).replace(/\s/g, ' ')
     const amountVal = txnRecord.amount
+    const statementDate = formatSlspStatementDate(txnRecord.createdAt.toISOString())
 
     const pdfInput = {
       accountName: senderUser?.name || 'Klient',
       accountNumber: fromAccount?.accountNumber || '',
       currency: fromAccount?.currency || 'EUR',
-      dateCreated: txnRecord.createdAt.toLocaleDateString('sk-SK'),
+      statementDate,
+      accountingPeriod: `${statementDate} - ${statementDate}`,
+      statementNumber: formatSlspStatementNumber(txnRecord.createdAt.toISOString()),
       transactions: [
         {
           id: txnRecord.id,

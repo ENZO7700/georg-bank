@@ -11,7 +11,11 @@ import {
   type StatementMix,
   toPersistableTransactions,
 } from '@/lib/statement-generator'
-import { formatTransactionDateMedium } from '@/lib/format-date'
+import {
+  formatSlspAccountingPeriod,
+  formatSlspStatementDate,
+  formatSlspStatementNumber,
+} from '@/lib/format-date'
 import { checkStatementGenerationRateLimit } from '@/lib/statement-rate-limit'
 
 export interface BulkStatementRequest {
@@ -127,7 +131,12 @@ export async function generateBulkStatementsAction(
         accountName: displayName,
         accountNumber: account.accountNumber,
         currency: account.currency || 'EUR',
-        dateCreated: formatTransactionDateMedium(statement.periodEnd.toISOString()),
+        statementDate: formatSlspStatementDate(statement.periodEnd.toISOString()),
+        accountingPeriod: formatSlspAccountingPeriod(
+          statement.periodStart.toISOString(),
+          statement.periodEnd.toISOString(),
+        ),
+        statementNumber: formatSlspStatementNumber(statement.periodEnd.toISOString()),
         transactions: statement.transactions,
         initialBalance: statement.initialBalance,
         finalBalance: statement.finalBalance,

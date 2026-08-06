@@ -5,6 +5,11 @@ import { bankAccount, transaction } from '@/lib/db/schema'
 import { and, eq, or, desc, gte, lt } from 'drizzle-orm'
 import { generateTransactionsPdf, TransactionRow } from '@/lib/generate-transactions-pdf'
 import { getMonthUtcRange } from '@/lib/month-range'
+import {
+  formatSlspAccountingPeriod,
+  formatSlspStatementDate,
+  formatSlspStatementNumber,
+} from '@/lib/format-date'
 
 export async function GET(req: Request) {
   try {
@@ -113,16 +118,27 @@ export async function GET(req: Request) {
       }
     }
 
+    const now = new Date()
+    let periodStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    let periodEnd = now
+
+    if (monthRange) {
+      periodStart = monthRange.start
+      periodEnd = new Date(monthRange.end.getTime() - 1)
+    }
+
     const pdfData = {
       accountName: currentAccount.displayName || session.user.name || 'Užívateľ',
       accountNumber: currentAccount.accountNumber,
       currency: currentAccount.currency || 'EUR',
-      dateCreated: new Date().toLocaleDateString('sk-SK', { timeZone: 'Europe/Bratislava' }),
+      statementDate: formatSlspStatementDate(periodEnd),
+      accountingPeriod: formatSlspAccountingPeriod(periodStart, periodEnd),
+      statementNumber: formatSlspStatementNumber(periodEnd),
       transactions: transactionRows,
       initialBalance,
       finalBalance,
       depositsTotal,
-      withdrawalsTotal
+      withdrawalsTotal,
     }
 
     const htmlContent = await generateTransactionsPdf(pdfData)
