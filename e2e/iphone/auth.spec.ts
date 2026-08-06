@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
-import { gotoApp, login, passSiteGate } from '../helpers/app'
+import { gotoApp, passSiteGate } from '../helpers/app'
+import { loginWithPin } from '../helpers/dashboard2'
 import {
   expectNoHorizontalOverflow,
   expectPortraitViewport,
@@ -30,7 +31,7 @@ test.describe('iPhone – Auth', () => {
   })
 
   test('auth-003: guest auto-login lands on dashboard2', async ({ page }) => {
-    await login(page)
+    await loginWithPin(page)
     await expect(page).toHaveURL(/dashboard2/)
     await expect(page.getByText('SPACE účet').first()).toBeVisible({ timeout: 15000 })
     await expectNoHorizontalOverflow(page)
@@ -51,13 +52,13 @@ test.describe('iPhone – Auth', () => {
   test('auth-006: dashboard2 after cold navigation has session', async ({ page }) => {
     await gotoApp(page, '/dashboard2')
     await expect(page).toHaveURL(/dashboard2/)
-    await expect(page.locator('header').getByRole('button', { name: /Odhlás/i })).toBeVisible({
-      timeout: 15000,
-    })
+    // Full-bleed mobile: session is established when PIN screen is shown (no Odhlás chrome)
+    await expect(page.getByText(/Zadajte bezpečnostný PIN/i)).toBeVisible({ timeout: 15000 })
   })
 
   test('auth-007: logout returns to a locked or re-auth flow', async ({ page }) => {
-    await login(page)
+    // Logout lives on classic DashboardHeader (payment-orders), not full-bleed dashboard2
+    await gotoApp(page, '/dashboard/payment-orders')
     await page.locator('header').getByRole('button', { name: /Odhlás/i }).click()
     // After sign-out, middleware may re-guest-login or show gate/sign-in.
     await page.waitForTimeout(2000)
@@ -69,7 +70,7 @@ test.describe('iPhone – Auth', () => {
 
   test('auth-008: no horizontal overflow on entry', async ({ page }) => {
     await gotoApp(page, '/dashboard2')
-    await expect(page.getByText('SPACE účet').first()).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(/Zadajte bezpečnostný PIN/i)).toBeVisible({ timeout: 15000 })
     await expectNoHorizontalOverflow(page)
   })
 

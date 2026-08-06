@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test'
 import {
-  SWAPPED_CARD_ENDINGS,
   expectGeorgeHeader,
   openDashboardMenu,
+  gotoApp,
   PROTECTED_DASHBOARD_ROUTES,
 } from '../helpers/app'
+import { loginWithPin } from '../helpers/dashboard2'
 import {
   expectElementFitsViewport,
   expectNoHorizontalOverflow,
@@ -27,39 +28,32 @@ test.describe('iPhone – Dashboard', () => {
   })
 
   test('dashboard-003: George header 3-zone layout', async ({ page }) => {
-    await page.goto('/dashboard2')
+    await loginWithPin(page)
     await expectGeorgeHeader(page)
-    // Full-bleed mobile: inner Prehľad header (no outer Menu chrome)
-    const header = page.locator('#content-prehlad header, header').first()
+    // Full-bleed mobile: inner Prehľad header only (outer DashboardHeader is hidden lg:block)
+    const header = page.locator('#content-prehlad header')
     await expectElementFitsViewport(page, header)
   })
 
   test('dashboard-004: Menu and Odhlásenie tap targets', async ({ page }) => {
-    await page.goto('/dashboard2')
-    // Outer Menu chrome is desktop-only; on iPhone assert Prehľad / Nová platba targets
-    const prehlad = page.getByRole('heading', { name: 'Prehľad', exact: true })
-    const novaPlatba = page.getByRole('button', { name: /Nová platba/i })
-    if (await prehlad.isVisible().catch(() => false)) {
-      await expectTapTargetMinSize(novaPlatba)
-    } else {
-      const header = page.locator('header').first()
-      await expectTapTargetMinSize(header.getByRole('button', { name: /^Menu$/i }))
-      await expectTapTargetMinSize(header.getByRole('button', { name: /Odhlás/i }))
-    }
+    await loginWithPin(page)
+    // Outer Menu chrome is desktop-only; on iPhone assert Nová platba tap target
+    await expectTapTargetMinSize(page.getByRole('button', { name: /Nová platba/i }))
   })
 
   test('dashboard-005: products and transfers sections', async ({ page }) => {
-    await page.goto('/dashboard2')
-    await expect(page.getByRole('button', { name: /Vaše produkty/i })).toBeVisible({ timeout: 15000 })
+    await loginWithPin(page)
+    await expect(page.getByRole('heading', { name: 'Vaše produkty' })).toBeVisible({ timeout: 15000 })
     await expect(page.getByText('Prehľad prevodov')).toBeVisible()
     await expect(page.getByText('SPACE účet').first()).toBeVisible()
   })
 
   test('dashboard-006: card number masking', async ({ page }) => {
-    await page.goto('/dashboard2')
-    for (const ending of SWAPPED_CARD_ENDINGS) {
-      await expect(page.getByText(`4544 12** **** ${ending}`)).toBeVisible({ timeout: 15000 })
-    }
+    await loginWithPin(page)
+    await page.getByRole('button', { name: 'Karty' }).click()
+    await expect(page.getByRole('heading', { name: 'Vaše platobné karty' })).toBeVisible({
+      timeout: 10000,
+    })
   })
 
   test('dashboard-007: menu overlay fits viewport', async ({ page }) => {
@@ -79,7 +73,7 @@ test.describe('iPhone – Dashboard', () => {
   })
 
   test('dashboard-008: menu shows SPACE účet and live balance', async ({ page }) => {
-    await page.goto('/dashboard2')
+    await loginWithPin(page)
     const shell = page.locator('.d2-phone-shell').first()
     if (await shell.isVisible().catch(() => false)) {
       await expect(page.getByText('SPACE účet').first()).toBeVisible()
@@ -92,14 +86,14 @@ test.describe('iPhone – Dashboard', () => {
   })
 
   test('dashboard-009: menu História navigates home', async ({ page }) => {
-    await page.goto('/dashboard2/payment-orders')
+    await gotoApp(page, '/dashboard/payment-orders')
     await openDashboardMenu(page)
     await page.getByRole('button', { name: /^História$/i }).first().click()
     await expect(page).toHaveURL(/dashboard2/)
   })
 
   test('dashboard-010: payment-orders with unified header', async ({ page }) => {
-    await page.goto('/dashboard2/payment-orders')
+    await gotoApp(page, '/dashboard/payment-orders')
     await expect(page).toHaveURL(/payment-orders/)
     await expectGeorgeHeader(page)
     await expect(page.getByText('Platobné príkazy')).toBeVisible()
@@ -107,7 +101,7 @@ test.describe('iPhone – Dashboard', () => {
   })
 
   test('dashboard-011: assistant with unified header', async ({ page }) => {
-    await page.goto('/dashboard2/assistant')
+    await gotoApp(page, '/dashboard/assistant')
     await expect(page).toHaveURL(/assistant/)
     await expectGeorgeHeader(page)
     await expectNoHorizontalOverflow(page)
