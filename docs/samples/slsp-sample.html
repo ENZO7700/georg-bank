@@ -1,4 +1,10 @@
-* {
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Výpis z účtu</title>
+  <style>* {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -366,3 +372,134 @@ body {
     print-color-adjust: exact !important;
   }
 }
+</style>
+</head>
+<body>
+  
+  <div class="page-viewport">
+    <div class="page">
+      <div class="page-meta">č.{{ statementNumber }} - Strana 1/1</div>
+
+      <div class="header-row">
+        
+      <div class="bank-block">
+        
+    <div class="logo-row">
+      <div class="logo-text-col">
+        <div class="logo-main-row">
+          <span class="logo-title">SLOVENSKÁ</span>
+          <span class="logo-icon-wrapper"><svg class="erste-symbol" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <rect width="32" height="32" rx="2" fill="#E30613"/>
+  <path fill="#FFFFFF" d="M8 22V10h3.2c2.8 0 4.6 1.5 4.6 3.9 0 2.1-1.4 3.4-3.5 3.7L17.5 22H14l-2.6-3.8H11V22H8zm3-6.1h.4c1.1 0 1.7-.5 1.7-1.3 0-.8-.6-1.2-1.7-1.2h-.4v2.5zM18.5 22l4.8-12h3.1l-4.8 12h-3.1z"/>
+</svg></span>
+        </div>
+        <span class="logo-subtitle">sporiteľňa</span>
+      </div>
+    </div>
+        Slovenská sporiteľňa, a.s.<br>
+        Tomášikova 48, 832 37 Bratislava<br>
+        IČO 00 151 653, zapísaná v Obchodnom registri<br>
+        Mestského súdu Bratislava III., oddiel Sa, vložka č. 601/B
+      </div>
+        <div class="holder-address"><div>{{ accountName }}</div><div>{{ holderAddressLine1 }}</div><div>{{ holderAddressLine2 }}</div></div>
+      </div>
+
+      <div class="document-title">Výpis z Účtu: {{ accountProductType }}</div>
+      
+    <div class="details-box">
+      <div class="details-col">
+        <div class="details-row row-large">
+          <span class="marker"></span>
+          <span class="label">Názov Účtu</span>
+          <span class="value value-large">{{ accountName }}</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Číslo Účtu</span>
+          <span class="value">{{ accountNumber }}</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">BIC</span>
+          <span class="value value-right">{{ bic }}</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Mena</span>
+          <span class="value value-right">{{ currency }}</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Dátum vyhotovenia výpisu</span>
+          <span class="value value-right">{{ statementDate }}</span>
+        </div>
+      </div>
+      <div class="details-col">
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Účtovné obdobie</span>
+          <span class="value">{{ accountingPeriod }}</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Počiatočný stav Účtu</span>
+          <span class="value">{{ initialBalance }}</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Vklady spolu</span>
+          <span class="value">{{ depositsTotal }}</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Výbery spolu</span>
+          <span class="value">{{ withdrawalsTotal }}</span>
+        </div>
+        <div class="details-row">
+          <span class="marker"></span>
+          <span class="label">Konečný stav Účtu</span>
+          <span class="value">{{ finalBalance }}</span>
+        </div>
+      </div>
+    </div>
+      
+    <div class="tax-total-row">
+      <span class="tax-total-label">Transakčná daň spolu:</span>
+      <span class="tax-total-value">{{ transactionTaxTotal }}</span>
+    </div>
+
+      <div class="table-container">
+        
+      <div class="table-header">
+        <div class="header-cell cell-left">Dátum<br>valuty</div>
+        <div class="header-cell cell-left">Dátum<br>zúčtovania</div>
+        <div class="header-cell cell-left">Popis<br>transakcie</div>
+        <div class="header-cell cell-right">Suma<br>transakcie</div>
+        <div class="header-cell cell-right">Suma<br>poplatku</div>
+      </div>
+        <div class="transaction-box" style="min-height: 520px;">
+          <div class="empty-rows">Žiadne transakcie v danom období</div>
+        </div>
+      </div>
+
+      
+    <div class="tax-breakdown">
+      <div class="tax-breakdown-title">Prehľad zúčtovanej Transakčnej dane:</div>
+      
+      <div class="tax-breakdown-row">
+        <span class="tax-label">Transakčná daň:</span>
+        <span class="tax-amount">{{ transactionTax }}</span>
+        <span class="tax-count"></span>
+      </div>
+    </div>
+      <div class="legal-notice">Vklad podliehajúci ochrane vkladov v súlade so zákonom. Viac informácií získate v Informačnom formulári pre vkladateľa, ktorý Vám bol doručený alebo odovzdaný.</div>
+      
+    <div class="footer">
+      <div class="footer-item">info@slsp.sk</div>
+      <div class="footer-item">Klientske centrum: 0850 111 888</div>
+      <div class="footer-item">www.slsp.sk</div>
+    </div>
+    </div>
+  </div>
+</body>
+</html>

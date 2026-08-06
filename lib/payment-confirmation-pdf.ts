@@ -193,7 +193,9 @@ export function generatePaymentConfirmationHtml(data: PaymentConfirmationPdfData
         height: 100% !important;
         background-color: #ffffff;
         position: relative;
-        padding: 66px 70px 44px 78px;
+        /* 5px higher than the raw 66px/44px margins; the bottom padding takes
+           the same 5px so the margin-top:auto footer shifts up as well. */
+        padding: 61px 70px 49px 78px;
         display: flex;
         flex-direction: column;
         box-sizing: border-box;
@@ -261,7 +263,7 @@ export function generatePaymentConfirmationHtml(data: PaymentConfirmationPdfData
         width: 100% !important;
         height: 100% !important;
         position: relative;
-        padding: 66px 70px 44px 78px !important;
+        padding: 61px 70px 49px 78px !important;
         display: flex;
         flex-direction: column;
         box-sizing: border-box;
@@ -270,7 +272,7 @@ export function generatePaymentConfirmationHtml(data: PaymentConfirmationPdfData
         display: block !important;
         position: absolute;
         left: 58px;
-        bottom: 108px;
+        bottom: 113px;
         transform: rotate(-90deg);
         transform-origin: left bottom;
         color: #a6b2b9;
