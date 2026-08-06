@@ -98,8 +98,11 @@ export async function POST(req: Request) {
       if (!uploadError) {
         const { data: urlData } = supabase.storage.from('receipts').getPublicUrl(storagePath)
         pdfUrl = urlData.publicUrl
-      } else {
+      } else if (uploadError.message !== 'Bucket not found') {
         console.error('[receipts/upload] Supabase storage error:', uploadError.message)
+      } else {
+        // Bucket missing in this project — fall through to Blob / local public/pdfs.
+        console.warn('[receipts/upload] receipts bucket missing; using fallback storage')
       }
     }
 
