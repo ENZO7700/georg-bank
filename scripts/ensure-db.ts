@@ -1,7 +1,12 @@
 import fs from 'fs'
 import path from 'path'
+import { config as loadEnv } from 'dotenv'
 import { Pool } from 'pg'
 import { resolveDatabaseUrl } from '../lib/db/resolve-database-url'
+
+// `npm run build` runs this before Next.js loads .env.local
+loadEnv({ path: '.env.local' })
+
 import {
   DEMO_DEFAULT_USER_EMAIL,
   DEMO_DEFAULT_USER_ID,
@@ -73,7 +78,29 @@ async function ensureSchema(pool: Pool) {
     await applySqlFile(pool, migrationPath)
   }
 
+  const statementProfileMigration = path.join(
+    process.cwd(),
+    'drizzle',
+    '0002_bank_account_statement_profile.sql'
+  )
+  if (fs.existsSync(statementProfileMigration)) {
+    await applySqlFile(pool, statementProfileMigration)
+  }
+
   console.log('[ensure-db] Schema applied.')
+}
+
+async function ensureStatementProfileColumns(pool: Pool) {
+  if (!(await tableExists(pool, 'bank_account'))) return
+
+  const statementProfileMigration = path.join(
+    process.cwd(),
+    'drizzle',
+    '0002_bank_account_statement_profile.sql'
+  )
+  if (fs.existsSync(statementProfileMigration)) {
+    await applySqlFile(pool, statementProfileMigration)
+  }
 }
 
 async function ensureGuestUser(pool: Pool) {
@@ -219,7 +246,12 @@ async function ensureDemoAccountBalance(pool: Pool) {
     if (byIban.rows.length > 0) {
       await pool.query(
         `UPDATE "bank_account"
-         SET "userId" = $1, balance = GREATEST(balance, $2), "updatedAt" = NOW()
+         SET "userId" = $1,
+             balance = GREATEST(balance, $2),
+             "productLabel" = COALESCE("productLabel", 'Osobný účet'),
+             "holderAddressLine1" = COALESCE("holderAddressLine1", 'Tomášikova 12'),
+             "holderAddressLine2" = COALESCE("holderAddressLine2", '831 04 Bratislava'),
+             "updatedAt" = NOW()
          WHERE id = $3`,
         [defaultUserId, SEED_CENTS, byIban.rows[0].id]
       )
@@ -230,10 +262,18 @@ async function ensureDemoAccountBalance(pool: Pool) {
     await pool.query(
       `INSERT INTO "bank_account" (
          id, "userId", "accountNumber", "displayName", "accountType",
+         "productLabel", "holderAddressLine1", "holderAddressLine2",
          balance, currency, "isActive", "createdAt", "updatedAt"
-       ) VALUES ($1, $2, 'SK3109000000005012345678', 'Osobný účet', 'checking', $3, 'EUR', true, NOW(), NOW())
+       ) VALUES (
+         $1, $2, 'SK3109000000005012345678', 'Osobný účet', 'checking',
+         'Osobný účet', 'Tomášikova 12', '831 04 Bratislava',
+         $3, 'EUR', true, NOW(), NOW()
+       )
        ON CONFLICT ("accountNumber") DO UPDATE
          SET "userId" = EXCLUDED."userId",
+             "productLabel" = COALESCE("bank_account"."productLabel", EXCLUDED."productLabel"),
+             "holderAddressLine1" = COALESCE("bank_account"."holderAddressLine1", EXCLUDED."holderAddressLine1"),
+             "holderAddressLine2" = COALESCE("bank_account"."holderAddressLine2", EXCLUDED."holderAddressLine2"),
              balance = GREATEST("bank_account".balance, EXCLUDED.balance),
              "updatedAt" = NOW()`,
       ['acc-demo-default', defaultUserId, SEED_CENTS]
@@ -243,11 +283,17 @@ async function ensureDemoAccountBalance(pool: Pool) {
   }
 
   const current = Number(existing.rows[0].balance ?? 0)
+  await pool.query(
+    `UPDATE "bank_account"
+     SET balance = GREATEST(balance, $1),
+         "productLabel" = COALESCE("productLabel", 'Osobný účet'),
+         "holderAddressLine1" = COALESCE("holderAddressLine1", 'Tomášikova 12'),
+         "holderAddressLine2" = COALESCE("holderAddressLine2", '831 04 Bratislava'),
+         "updatedAt" = NOW()
+     WHERE id = $2`,
+    [SEED_CENTS, existing.rows[0].id]
+  )
   if (current < SEED_CENTS) {
-    await pool.query(
-      `UPDATE "bank_account" SET balance = $1, "updatedAt" = NOW() WHERE id = $2`,
-      [SEED_CENTS, existing.rows[0].id]
-    )
     console.log(`[ensure-db] Demo account topped up ${current} → ${SEED_CENTS} cents.`)
   } else {
     console.log('[ensure-db] Demo account balance OK.')
@@ -297,11 +343,19 @@ async function ensureGuestBankAccount(pool: Pool) {
     await pool.query(
       `INSERT INTO "bank_account" (
          id, "userId", "accountNumber", "displayName", "accountType",
+         "productLabel", "holderAddressLine1", "holderAddressLine2",
          balance, currency, "isActive", "createdAt", "updatedAt"
-       ) VALUES ($1, $2, $3, 'SPACE účet', 'checking', $4, 'EUR', true, NOW(), NOW())
+       ) VALUES (
+         $1, $2, $3, 'SPACE účet', 'checking',
+         'SPACE účet', 'Testovacia 1', '811 01 Bratislava',
+         $4, 'EUR', true, NOW(), NOW()
+       )
        ON CONFLICT ("accountNumber") DO UPDATE
          SET "userId" = EXCLUDED."userId",
              "displayName" = EXCLUDED."displayName",
+             "productLabel" = COALESCE("bank_account"."productLabel", EXCLUDED."productLabel"),
+             "holderAddressLine1" = COALESCE("bank_account"."holderAddressLine1", EXCLUDED."holderAddressLine1"),
+             "holderAddressLine2" = COALESCE("bank_account"."holderAddressLine2", EXCLUDED."holderAddressLine2"),
              balance = GREATEST("bank_account".balance, EXCLUDED.balance),
              "updatedAt" = NOW()`,
       [GUEST_ACCOUNT_ID, guestUserId, GUEST_IBAN, SEED_CENTS]
@@ -316,6 +370,9 @@ async function ensureGuestBankAccount(pool: Pool) {
     `UPDATE "bank_account"
      SET balance = GREATEST(balance, $1),
          "displayName" = COALESCE(NULLIF("displayName", ''), 'SPACE účet'),
+         "productLabel" = COALESCE("productLabel", 'SPACE účet'),
+         "holderAddressLine1" = COALESCE("holderAddressLine1", 'Testovacia 1'),
+         "holderAddressLine2" = COALESCE("holderAddressLine2", '811 01 Bratislava'),
          "updatedAt" = NOW()
      WHERE id = $2`,
     [SEED_CENTS, row.id]
@@ -334,6 +391,7 @@ export async function ensureDatabase() {
   try {
     await pool.query('SELECT 1')
     await ensureSchema(pool)
+    await ensureStatementProfileColumns(pool)
     await ensureGuestUser(pool)
     await migrateLegacyDemoUserIds(pool)
     await ensureDemoAccountBalance(pool)
