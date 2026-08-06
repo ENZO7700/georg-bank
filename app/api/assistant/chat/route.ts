@@ -64,15 +64,24 @@ async function getSharedConversation(userId: string) {
     .limit(1)
 
   if (!conversation) {
-    const [created] = await db
+    // Concurrent first opens race on the fixed shared id — ignore conflict and re-read.
+    const inserted = await db
       .insert(assistantConversation)
       .values({
         id: SHARED_CONVERSATION_ID,
         userId,
         title: 'Spoločný čet (Viacero používateľov online)',
       })
+      .onConflictDoNothing()
       .returning()
-    conversation = created
+    conversation = inserted[0]
+    if (!conversation) {
+      ;[conversation] = await db
+        .select()
+        .from(assistantConversation)
+        .where(eq(assistantConversation.id, SHARED_CONVERSATION_ID))
+        .limit(1)
+    }
   }
 
   return conversation
