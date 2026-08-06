@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
-import { generateTransactionsPdf } from '../lib/generate-transactions-pdf'
+import {
+  generateTransactionsPdf,
+  renderStatementSkeletonHtml,
+} from '../lib/generate-transactions-pdf'
 import { generatePaymentConfirmationHtml } from '../lib/payment-confirmation-pdf'
 import { computeStatementTax } from '../lib/statement-tax'
 import { StatementPdfValidationError } from '../lib/statement-pdf-profile'
+import { buildStatementFromPayment } from '../lib/statement-from-payment'
 
 const BASE_INPUT = {
   accountName: 'DALMAN group s. r. o.',
@@ -201,6 +205,100 @@ async function testEmptyTemplateMessage() {
   assert.ok(!html.match(/class="transaction-row"/))
 }
 
+function testSkeletonHasNoData() {
+  const html = renderStatementSkeletonHtml()
+
+  for (const token of [
+    '{{ accountName }}',
+    '{{ accountNumber }}',
+    '{{ accountingPeriod }}',
+    '{{ initialBalance }}',
+    '{{ depositsTotal }}',
+    '{{ withdrawalsTotal }}',
+    '{{ finalBalance }}',
+    '{{ transactionTaxTotal }}',
+  ]) {
+    assert.ok(html.includes(token), `skeleton should expose ${token}`)
+  }
+
+  assert.ok(html.includes('Slovenská sporiteľňa, a.s.'), 'bank block stays static')
+  assert.ok(html.includes('Žiadne transakcie v danom období'))
+  assert.ok(!html.includes('DALMAN'), 'skeleton must not embed demo data')
+  assert.ok(!html.includes('40 350,00'), 'skeleton must not embed demo balances')
+  assert.ok(!html.match(/SK\d{2} \d{4}/), 'skeleton must not embed a real IBAN')
+}
+
+function testStatementFromPayment() {
+  const statement = buildStatementFromPayment(
+    {
+      id: 'pay-1',
+      date: '2026-08-06T09:30:00.000Z',
+      recipientName: 'Ján Kovác',
+      recipientIban: 'SK8090000000001234567890',
+      amountCents: 10_000,
+      variableSymbol: '123456',
+      note: 'Platba za tovar',
+    },
+    {
+      currency: 'EUR',
+      holderAddressLines: ['Hlavná 1', '811 01 Bratislava'],
+    },
+  )
+
+  assert.equal(statement.accountName, 'Ján Kovác')
+  assert.equal(statement.accountNumber, 'SK8090000000001234567890')
+  assert.equal(statement.statementDate, '06. 08. 2026')
+  assert.equal(statement.accountingPeriod, '06. 08. 2026 - 06. 08. 2026')
+  assert.equal(statement.statementNumber, '8/2026')
+  assert.deepEqual(statement.holderAddressLines, [
+    'Ján Kovác',
+    'Hlavná 1',
+    '811 01 Bratislava',
+  ])
+
+  // 0,40 % of a 100,00 EUR payment = 0,40 EUR; balances reconcile against it.
+  assert.equal(statement.transactionTaxTotalCents, 40)
+  assert.equal(statement.depositsTotal, 0)
+  assert.equal(statement.withdrawalsTotal, 10_000)
+  assert.equal(statement.finalBalance, -10_040)
+  assert.equal(statement.transactions[0].balanceAfter, -10_040)
+
+  assert.throws(
+    () =>
+      buildStatementFromPayment(
+        { ...{ id: 'x', date: new Date(), recipientName: '', recipientIban: 'SK1', amountCents: 1 } },
+        { holderAddressLines: ['Hlavná 1'] },
+      ),
+    StatementPdfValidationError,
+  )
+}
+
+async function testPaymentStatementRendersPaymentValues() {
+  const statement = buildStatementFromPayment(
+    {
+      id: 'pay-2',
+      date: '2026-08-06T09:30:00.000Z',
+      recipientName: 'Ján Kovác',
+      recipientIban: 'SK8090000000001234567890',
+      amountCents: 10_000,
+      variableSymbol: '123456',
+      note: 'Platba za tovar',
+    },
+    {
+      currency: 'EUR',
+      holderAddressLines: ['Hlavná 1', '811 01 Bratislava'],
+    },
+  )
+
+  const html = await generateTransactionsPdf(statement)
+
+  assert.ok(html.includes('Platba pre: Ján Kovác'))
+  assert.ok(html.includes('SK80 9000 0000 0012 3456 7890'))
+  assert.ok(html.includes('Var. symbol: 123456'))
+  assert.ok(html.includes('- 0,40 EUR'))
+  assert.ok(!html.includes('{{'), 'rendered statement keeps no placeholders')
+}
+
 async function run() {
   await testPaginationLogic()
   await testSlspTemplateStructure()
@@ -208,6 +306,9 @@ async function run() {
   await testValidationErrors()
   await testPaymentTransactionRow()
   await testEmptyTemplateMessage()
+  testSkeletonHasNoData()
+  testStatementFromPayment()
+  await testPaymentStatementRendersPaymentValues()
   await testPaymentConfirmationDate()
   console.log('pdf-generator.test.ts: all tests passed')
 }
