@@ -1,11 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { Loader2, HelpCircle, ArrowRight } from 'lucide-react'
 
 export function SiteGateForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const [isChecking, setIsChecking] = useState(true)
   const [authorized, setAuthorized] = useState(false)
@@ -14,31 +13,40 @@ export function SiteGateForm() {
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  const redirectAfterGate = (fromParam: string | null) => {
+    // Prefer dashboard2 — bare "/" used to bounce through redirects and look like a black screen.
+    const raw = fromParam && fromParam !== '/' ? fromParam : '/dashboard2'
+    const target =
+      raw === '/dashboard' || raw.startsWith('/dashboard?') ? '/dashboard2' : raw
+    // Hard navigation avoids stuck client transitions on a black #030305 shell.
+    window.location.assign(target)
+  }
+
   useEffect(() => {
+    let cancelled = false
     const checkStatus = async () => {
       try {
         const res = await fetch('/api/gate')
         if (res.ok) {
           const data = await res.json()
           if (data.authorized) {
-            setAuthorized(true)
-            
-            // Auto redirect instantly
-            const from = searchParams.get('from') || '/'
-            router.push(from)
-            router.refresh()
+            if (!cancelled) setAuthorized(true)
+            redirectAfterGate(searchParams.get('from'))
             return
           }
         }
       } catch (err) {
         console.error('Error:', err)
       } finally {
-        setIsChecking(false)
+        if (!cancelled) setIsChecking(false)
       }
     }
-    
+
     checkStatus()
-  }, [router, searchParams])
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,9 +66,7 @@ export function SiteGateForm() {
         const data = await res.json()
         if (data.authorized || data.success) {
           setAuthorized(true)
-          const from = searchParams.get('from') || '/'
-          router.push(from)
-          router.refresh()
+          redirectAfterGate(searchParams.get('from'))
           return
         }
       } else {
@@ -73,11 +79,12 @@ export function SiteGateForm() {
     }
   }
 
-  // Render checking state: completely silent and generic
+  // Checking / post-auth: keep visible feedback (never blank black Suspense shell)
   if (isChecking || authorized) {
     return (
-      <div className="min-h-dvh bg-[#030305] flex items-center justify-center font-sans text-white overflow-hidden">
-        <Loader2 className="w-8 h-8 text-slate-600 animate-spin" />
+      <div className="min-h-dvh bg-[#030305] flex flex-col items-center justify-center gap-3 font-sans text-white overflow-hidden">
+        <Loader2 className="w-8 h-8 text-slate-500 animate-spin" />
+        <p className="text-xs text-slate-500">{authorized ? 'Presmerovávam…' : 'Overujem prístup…'}</p>
       </div>
     )
   }

@@ -25,5 +25,5 @@ Tieto cesty sú fixné a nesmú sa už **nikdy** meniť v zdrojovom kóde.
 * **Status loga:** Logo bolo kompletne **odstránené** zo vstupnej brány (`site-gate-form.tsx`) pre dosiahnutie čistého a minimalistického vzhľadu na žiadosť používateľa.
 * **Aktuálne prihlasovacie heslo do brány:** `"23513900"` (nakonfigurované v `.env.local` ako `SITE_GATE_PASSWORD`).
 * **Jediný aktívny Git repozitár:** `https://github.com/ENZO7700/landing-page-g.git`
-* **Produkčná URL adresa:** `https://portal-auth-8f2c3d.vercel.app` (spravovaná pod Vercel projektom `portal-auth-8f2c3d` v scope `viandmos-projects`).
+* **Produkčná URL adresa:** `https://georg-bank-viandmos-projects.vercel.app` (Vercel tím: `viandmos-projects`).
 

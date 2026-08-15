@@ -2,7 +2,7 @@ import { Suspense } from 'react'
 import { SiteGateForm } from '@/components/site-gate-form'
 
 export const metadata = {
-  title: 'Not Found',
+  title: 'George – vstup',
   robots: {
     index: false,
     follow: false,
@@ -13,9 +13,17 @@ export const metadata = {
   },
 }
 
+function GateFallback() {
+  return (
+    <div className="min-h-dvh bg-[#030305] flex items-center justify-center text-slate-400 text-sm">
+      Načítavam…
+    </div>
+  )
+}
+
 export default function GatePage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<GateFallback />}>
       <SiteGateForm />
     </Suspense>
   )

@@ -13,7 +13,7 @@
 | **Node** | 18+ (odporúčané v24) |
 | **Port (dev)** | `3030` (`npm run dev`) |
 | **Package manager** | npm / pnpm |
-| **Playwright BASE_URL** | `http://localhost:3030` (lokál) / `https://george-dev.vercel.app` (produkcia) |
+| **Playwright BASE_URL** | `http://localhost:3030` (lokál) / `https://georg-bank-viandmos-projects.vercel.app` (produkcia) |
 | **GitHub** | https://github.com/NEXIFY-STUDIO/georg (private) |
 
 ---
@@ -44,7 +44,7 @@ Next.js 16 App Router + Server Actions + Better Auth + Drizzle ORM + PostgreSQL 
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL connection string | **Áno** |
 | `BETTER_AUTH_SECRET` | Session šifrovanie | **Áno** |
-| `BETTER_AUTH_URL` | Kanonická URL (`https://george-dev.vercel.app`) | **Áno** |
+| `BETTER_AUTH_URL` | Kanonická URL (`https://georg-bank-viandmos-projects.vercel.app`) | **Áno** |
 | `SITE_GATE_PASSWORD` | Heslo pred appkou | **Áno** (prod) |
 | `SITE_GATE_ENABLED` | `false` pre CI/testy | Nie |
 | `MISTRAL_API_KEY` | AI asistent + webhook | Odporúčané |
@@ -172,7 +172,7 @@ Migrácie:
 npm run test:unit                                              # statement-generator unit
 npm run build
 npx playwright test --config=playwright.local.config.ts          # lokál E2E
-BASE_URL=https://george-dev.vercel.app npx playwright test --config=playwright.prod.config.ts
+BASE_URL=https://vykupujemstareplattne.vercel.app npx playwright test --config=playwright.prod.config.ts
 npx playwright test e2e/payment-pdf-content.spec.ts            # platba + API doklad
 npx playwright test e2e/statement-generator.spec.ts          # generátor
 ```
@@ -186,7 +186,7 @@ npx playwright test e2e/statement-generator.spec.ts          # generátor
 npx vercel --prod --yes
 ```
 
-Produkcia: https://george-dev.vercel.app
+Produkcia: https://vykupujemstareplattne.vercel.app
 
 ### VPS (legacy)
 ```bash

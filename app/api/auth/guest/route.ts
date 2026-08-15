@@ -101,6 +101,19 @@ export async function GET(request: NextRequest) {
     if (!authResponse.ok) {
       const body = await authResponse.text().catch(() => '')
       console.error('[guest-auth] sign-in failed:', authResponse.status, body)
+      // GET guest is always a browser navigation → never return blank JSON.
+      const accept = request.headers.get('accept') || ''
+      if (accept.includes('text/html') || accept.includes('*/*') || !accept) {
+        const html = `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Prihlásenie</title>
+<style>body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;background:#030305;color:#e2e8f0;font-family:system-ui,sans-serif;padding:24px;text-align:center}
+a{color:#60a5fa}</style></head><body><div><p>Nepodarilo sa automaticky prihlásiť.</p>
+<p style="color:#94a3b8;font-size:14px">Skontrolujte DATABASE_URL a BETTER_AUTH_* na Vercel.</p>
+<p><a href="/sign-in">Prihlásiť sa manuálne</a> · <a href="/gate">Späť na bránu</a></p></div></body></html>`
+        return new NextResponse(html, {
+          status: 500,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        })
+      }
       return NextResponse.json(
         { error: 'Nepodarilo sa automaticky prihlásiť.' },
         { status: 500 }
@@ -113,6 +126,18 @@ export async function GET(request: NextRequest) {
     return response
   } catch (error) {
     console.error('[guest-auth] unexpected error:', error)
+    const accept = request.headers.get('accept') || ''
+    if (accept.includes('text/html') || accept.includes('*/*') || !accept) {
+      const html = `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Prihlásenie</title>
+<style>body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;background:#030305;color:#e2e8f0;font-family:system-ui,sans-serif;padding:24px;text-align:center}
+a{color:#60a5fa}</style></head><body><div><p>Nepodarilo sa automaticky prihlásiť.</p>
+<p style="color:#94a3b8;font-size:14px">Databáza alebo auth nie sú dostupné. Skús znova neskôr.</p>
+<p><a href="/sign-in">Prihlásiť sa manuálne</a> · <a href="/dashboard2">Skúsiť dashboard</a></p></div></body></html>`
+      return new NextResponse(html, {
+        status: 500,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      })
+    }
     return NextResponse.json(
       { error: 'Nepodarilo sa automaticky prihlásiť.' },
       { status: 500 }

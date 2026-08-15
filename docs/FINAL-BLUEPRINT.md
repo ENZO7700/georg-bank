@@ -3,8 +3,8 @@
 > **Verzia:** 2.0 · **Dátum:** 30. 6. 2026  
 > **Vetva:** `feat/html-statements`  
 > **Repo:** https://github.com/NEXIFY-STUDIO/georg (private)  
-> **Produkcia:** https://george-dev.vercel.app  
-> **Vercel projekt:** `george-dev`  
+> **Produkcia:** https://georg-bank-viandmos-projects.vercel.app  
+> **Vercel projekt:** `georg-bank` (viandmos-projects)  
 
 Tento dokument je **jediný zdroj pravdy** pre celý projekt George — architektúru, všetky funkcie, bezpečnosť, dokumenty (HTML/PDF), generátor výpisov, PWA, asistenta, deploy, testy, známe medzery a roadmapu na 100 %.
 
@@ -885,7 +885,7 @@ npm run test:unit
 npx playwright test --config=playwright.local.config.ts
 
 # E2E produkcia
-BASE_URL=https://george-dev.vercel.app npx playwright test --config=playwright.prod.config.ts
+BASE_URL=https://georg-bank-viandmos-projects.vercel.app npx playwright test --config=playwright.prod.config.ts
 
 # Všetky E2E (vyžaduje DB + auth setup)
 npm run test
@@ -911,7 +911,7 @@ npm run test:unit && npm run build
 |----------|------|---------|
 | `DATABASE_URL` | PostgreSQL | `postgresql://...` |
 | `BETTER_AUTH_SECRET` | Session šifrovanie | `openssl rand -base64 32` |
-| `BETTER_AUTH_URL` | Kanonická URL | `https://george-dev.vercel.app` |
+| `BETTER_AUTH_URL` | Kanonická URL | `https://georg-bank-viandmos-projects.vercel.app` |
 | `SITE_GATE_PASSWORD` | Gate heslo | `heslo` |
 
 ### Odporúčané
@@ -1075,8 +1075,8 @@ Všetky plánované PR (PR1–PR10) sú implementované. Voliteľné vylepšenia
 | Čo | Kde |
 |----|-----|
 | GitHub | https://github.com/NEXIFY-STUDIO/georg |
-| Produkcia | https://george-dev.vercel.app |
-| Vercel project | `george-dev` |
+| Produkcia | https://georg-bank-viandmos-projects.vercel.app |
+| Vercel project | `georg-bank` (viandmos-projects) |
 | Vetva | `feat/html-statements` |
 | Tento blueprint | `docs/FINAL-BLUEPRINT.md` |
 | Referenčný výpis | `docs/VVVypis.html` |
@@ -1091,7 +1091,7 @@ Všetky plánované PR (PR1–PR10) sú implementované. Voliteľné vylepšenia
 ┌─────────────────────────────────────────────────────────────┐
 │  GEORGE — RÝCHLA KARTA                                     │
 ├─────────────────────────────────────────────────────────────┤
-│  URL:      https://george-dev.vercel.app                    │
+│  URL:      https://georg-bank-viandmos-projects.vercel.app │
 │  Gate:     heslo (SITE_GATE_PASSWORD)                       │
 │  Email:    anton-karton-007@proton.me                       │
 │  Heslo:    admin@admin.com                                  │
