@@ -1,4 +1,4 @@
-# Internet Bank PWA (George)
+# Internet  PWA ()
 
 A production-ready banking PWA (Progressive Web App) built with Next.js 16, PostgreSQL, and Better Auth.
 
