@@ -1,12 +1,30 @@
-export const GUEST_USER_EMAIL =
-  process.env.GUEST_USER_EMAIL ||
-  process.env.NEXT_PUBLIC_DEV_USER_EMAIL ||
-  'admin@local.test'
+const DEFAULT_GUEST_EMAIL = 'admin@local.test'
+const DEFAULT_GUEST_PASSWORD = 'admin1234'
+
+function resolveGuestEmail() {
+  const configured =
+    process.env.GUEST_USER_EMAIL ||
+    process.env.NEXT_PUBLIC_DEV_USER_EMAIL ||
+    DEFAULT_GUEST_EMAIL
+  if (!configured.trim().toLowerCase().endsWith('@local.test')) {
+    console.error(
+      '[guest-auth] GUEST_USER_EMAIL must end with @local.test; falling back to',
+      DEFAULT_GUEST_EMAIL,
+      '(got:',
+      configured,
+      ')'
+    )
+    return DEFAULT_GUEST_EMAIL
+  }
+  return configured
+}
+
+export const GUEST_USER_EMAIL = resolveGuestEmail()
 
 export const GUEST_USER_PASSWORD =
   process.env.GUEST_USER_PASSWORD ||
   process.env.NEXT_PUBLIC_DEV_USER_PASSWORD ||
-  'admin1234'
+  DEFAULT_GUEST_PASSWORD
 
 export const GUEST_USER_NAME = 'Peter'
 
