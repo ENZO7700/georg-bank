@@ -2866,7 +2866,7 @@ export default function GeorgePrototypePage() {
           <div
             id="payment-sheet"
             data-testid="payment-sheet"
-            className={`fixed inset-0 z-[200] flex flex-col justify-end bg-black/75 backdrop-blur-sm transition-opacity duration-300 ${
+            className={`fixed inset-0 z-[200] bg-black/75 backdrop-blur-sm transition-opacity duration-300 ${
               isPaymentSheetOpen
                 ? 'opacity-100 pointer-events-auto'
                 : 'opacity-0 pointer-events-none'
@@ -2881,7 +2881,7 @@ export default function GeorgePrototypePage() {
 
             <div
               data-testid="payment-sheet-panel"
-              className={`bg-[#12131b] w-full h-[100dvh] max-h-[100dvh] overflow-hidden flex flex-col rounded-t-[32px] border-t border-slate-800 z-10 shadow-2xl relative transition-transform duration-300 ease-out pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] ${
+              className={`absolute inset-0 z-10 flex h-dvh max-h-dvh w-full flex-col overflow-hidden bg-[#12131b] pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-300 ease-out ${
                 isPaymentSheetOpen ? 'translate-y-0' : 'translate-y-full'
               }`}
               onClick={(e) => e.stopPropagation()}

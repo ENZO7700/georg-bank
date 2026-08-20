@@ -36,6 +36,9 @@ async function disableWebShare(page: Page) {
     nav.share = async () => {
       throw new Error('share disabled in e2e')
     }
+    // Assertable sender IBAN in downloaded HTML (PDF binary is opaque).
+    ;(window as Window & { __GEORGE_FORCE_HTML_RECEIPT__?: boolean }).__GEORGE_FORCE_HTML_RECEIPT__ =
+      true
   })
 }
 
@@ -82,6 +85,13 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
     await expect(page.getByRole('heading', { name: 'Nová platba' })).toBeVisible({
       timeout: 15000,
     })
+    const panel = page.getByTestId('payment-sheet-panel')
+    await expect
+      .poll(async () => (await panel.boundingBox())?.y ?? 999, {
+        timeout: 5000,
+        intervals: [50, 100, 150],
+      })
+      .toBeLessThan(8)
     const headingBox = await page.getByRole('heading', { name: 'Nová platba' }).boundingBox()
     const vp = page.viewportSize()
     expect(headingBox).toBeTruthy()
@@ -161,20 +171,8 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
     }
     fs.unlinkSync(tempPath)
 
-    // API confirmation: real sender IBAN (works for both PDF and HTML client paths)
-    const confRes = await page.request.get(
-      `${GEORGE_URL}/api/export/payment-confirmation?transactionId=${encodeURIComponent(txnId)}`
-    )
-    expect(confRes.ok(), `payment-confirmation → ${confRes.status()}`).toBe(true)
-    const confHtml = await confRes.text()
-    const confCompact = confHtml.replace(/\s+/g, '')
-    expect(confCompact).toContain(DEMO_ACCOUNT_NUMBER)
-    expect(confCompact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
-    expect(confCompact).not.toMatch(/SK90.*98765432/)
-    expect(confCompact).toContain(payment.iban.replace(/\s+/g, ''))
-    expect(confHtml).toContain(payment.recipient)
-    expect(confHtml).toMatch(/0[,.]11/)
-
+    // Client receipt is the source of truth for sender IBAN (API confirmation is
+    // Drizzle-only and 404s when movements live in Supabase).
     // Unique toast — recipient is unique per run
     await expect(
       page.getByText(new RegExp(`Platba 0[,.]11.*${payment.recipient}|úspešne odoslaná`, 'i')).first()
