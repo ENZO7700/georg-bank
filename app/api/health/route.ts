@@ -13,6 +13,13 @@ export async function GET() {
   const hasDatabaseUrl = Boolean(resolveDatabaseUrl())
   const hasBetterAuthSecret = Boolean(process.env.BETTER_AUTH_SECRET?.trim())
   const betterAuthUrl = process.env.BETTER_AUTH_URL?.trim() || null
+  const rawGuestEmail =
+    process.env.GUEST_USER_EMAIL?.trim() ||
+    process.env.NEXT_PUBLIC_DEV_USER_EMAIL?.trim() ||
+    null
+  const rawGuestEmailOk = rawGuestEmail
+    ? isDedicatedGuestEmail(rawGuestEmail)
+    : true
   const guestEmailOk = isDedicatedGuestEmail(GUEST_USER_EMAIL)
 
   let database: 'ok' | 'unreachable' | 'unconfigured' = 'unconfigured'
@@ -36,7 +43,11 @@ export async function GET() {
   }
 
   const ok =
-    database === 'ok' && hasBetterAuthSecret && guestEmailOk && Boolean(betterAuthUrl)
+    database === 'ok' &&
+    hasBetterAuthSecret &&
+    guestEmailOk &&
+    rawGuestEmailOk &&
+    Boolean(betterAuthUrl)
 
   return NextResponse.json(
     {
@@ -59,6 +70,8 @@ export async function GET() {
       },
       guest: {
         emailIsLocalTest: guestEmailOk,
+        envEmailIsLocalTest: rawGuestEmailOk,
+        usingFallbackEmail: Boolean(rawGuestEmail && !rawGuestEmailOk),
       },
       vercel: {
         env: process.env.VERCEL_ENV ?? null,
