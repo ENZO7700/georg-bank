@@ -4,6 +4,9 @@ import path from 'path'
 import { loginWithPin } from './helpers/dashboard2'
 import { DEMO_ACCOUNT_NUMBER, LEGACY_FAKE_SENDER_IBAN } from '../lib/demo-user'
 
+/** Demo SPACE (…5678) or guest (…5679) — both are real seeded accounts, never the SK90 fake. */
+const REAL_SENDER_IBAN_RE = /^SK310900000000501234567[89]$/
+
 /**
  * E2E: vyplnenie platby na /dashboard2 → Autorizovať cez George kľúč
  * → PDF potvrdenie (+ sandbox doklady).

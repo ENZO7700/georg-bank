@@ -163,7 +163,7 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
       expect(html).toContain(payment.recipient)
       expect(html).toMatch(/0[,.]11/)
       expect(compact).toMatch(/SK8090000000001234567890/i)
-      expect(compact).toContain(DEMO_ACCOUNT_NUMBER)
+      expect(compact).toMatch(/SK310900000000501234567[89]/)
       expect(compact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
       expect(html).toContain(payment.note)
       expect(html).toMatch(/George kľúč|mToken/i)
