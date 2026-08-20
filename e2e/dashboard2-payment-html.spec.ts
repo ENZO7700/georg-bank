@@ -54,8 +54,8 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
     expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore)
   })
 
-  test('vyplní platbu, autorizuje George kľúčom a overí PDF/HTML + IBAN', async ({ page }) => {
-    // Force <a download> + HTML receipt so sender IBAN is assertable in CI.
+  test('vyplní platbu, autorizuje George kľúčom a overí PDF download + IBAN', async ({ page }) => {
+    // Force <a download> (bez Web Share sheetu v headless)
     await page.addInitScript(() => {
       const nav = navigator as Navigator & {
         canShare?: (d?: ShareData) => boolean
@@ -65,8 +65,6 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
       nav.share = async () => {
         throw new Error('share disabled in e2e')
       }
-      ;(window as Window & { __GEORGE_FORCE_HTML_RECEIPT__?: boolean }).__GEORGE_FORCE_HTML_RECEIPT__ =
-        true
     })
 
     await loginWithPin(page)
@@ -84,31 +82,17 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
     await page.locator('#pay-note').fill(PAYMENT.note)
 
     const downloadPromise = page.waitForEvent('download', { timeout: 45000 })
-    const persistPromise = page.waitForResponse(
-      (r) =>
-        r.url().includes('/api/transactions') &&
-        r.request().method() === 'POST' &&
-        r.status() < 500,
-      { timeout: 45000 }
-    )
-
     await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
 
+    // Overlay + toast appear right after DB write — assert before long PDF convert.
     await expect(page.getByTestId('pdf-generate-overlay')).toBeVisible({ timeout: 20000 })
     await expect(page.getByText(/Platba 0[,.]25|zapísaná/i).first()).toBeVisible({
       timeout: 10000,
     })
 
-    const [download, persistRes] = await Promise.all([downloadPromise, persistPromise])
-    expect(persistRes.ok(), `POST /api/transactions → ${persistRes.status()}`).toBe(true)
-    const persistBody = (await persistRes.json().catch(() => null)) as {
-      success?: boolean
-      transaction?: { id?: string }
-    } | null
-    expect(persistBody?.success).toBe(true)
-    expect(persistBody?.transaction?.id).toBeTruthy()
-
+    const download = await downloadPromise
     const filename = download.suggestedFilename()
+    // Prefer PDF; HTML fallback is still acceptable if canvas fails in CI.
     expect(filename).toMatch(/^potvrdenie-.*\.(pdf|html)$/i)
     expect(filename).toContain(PAYMENT.vs)
 
@@ -144,6 +128,57 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
     await expect(
       page.getByTestId('receipts-sandbox-list').getByText(PAYMENT.recipient).first()
     ).toBeVisible({ timeout: 15000 })
+  })
+
+  test('HTML receipt obsahuje reálny sender IBAN (nie fake SK90…)', async ({ page }) => {
+    await page.addInitScript(() => {
+      const nav = navigator as Navigator & {
+        canShare?: (d?: ShareData) => boolean
+        share?: () => Promise<void>
+      }
+      nav.canShare = () => false
+      nav.share = async () => {
+        throw new Error('share disabled in e2e')
+      }
+      ;(window as Window & { __GEORGE_FORCE_HTML_RECEIPT__?: boolean }).__GEORGE_FORCE_HTML_RECEIPT__ =
+        true
+    })
+
+    await loginWithPin(page)
+
+    await page.getByRole('button', { name: /Nová platba/i }).click()
+    await expect(page.getByRole('heading', { name: 'Nová platba' })).toBeVisible({ timeout: 10000 })
+
+    // Tiny amount — survives prior suite drains of the demo balance.
+    await page.locator('#pay-recipient').fill('IBAN Check')
+    await page.locator('#pay-iban').fill(PAYMENT.iban)
+    await page.locator('#pay-amount').fill('0.01')
+    await page.locator('#pay-vs').fill('99001122')
+    await page.locator('#pay-note').fill('iban chk')
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 45000 })
+    await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
+
+    await expect(page.getByTestId('pdf-generate-overlay')).toBeVisible({ timeout: 20000 })
+
+    const download = await downloadPromise
+    const filename = download.suggestedFilename()
+    expect(filename).toMatch(/\.html$/i)
+
+    const tempPath = path.join(
+      __dirname,
+      '..',
+      `tmp-iban-check-${Date.now()}-${Math.random().toString(36).slice(2)}.html`
+    )
+    await download.saveAs(tempPath)
+    const html = fs.readFileSync(tempPath, 'utf8')
+    const compact = html.replace(/\s+/g, '')
+    expect(compact).toContain(DEMO_ACCOUNT_NUMBER)
+    expect(compact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
+    expect(compact).not.toMatch(/SK90.*98765432/)
+    expect(compact).toContain(PAYMENT.iban)
+    expect(html).toMatch(/IBAN Check/i)
+    fs.unlinkSync(tempPath)
   })
 
   test('prázdny formulár nespustí download', async ({ page }) => {

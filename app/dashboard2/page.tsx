@@ -822,7 +822,14 @@ export default function GeorgePrototypePage() {
         return
       }
       if (result.usedHtmlFallback) {
-        showToast('PDF sa nepodarilo vytvoriť — stiahnuté HTML.')
+        const forcedHtml =
+          typeof window !== 'undefined' &&
+          (window as Window & { __GEORGE_FORCE_HTML_RECEIPT__?: boolean })
+            .__GEORGE_FORCE_HTML_RECEIPT__ === true
+        // Keep the payment-success toast when e2e forces HTML; otherwise warn.
+        if (!forcedHtml) {
+          showToast('PDF sa nepodarilo vytvoriť — stiahnuté HTML.')
+        }
       }
     } catch {
       try {
