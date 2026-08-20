@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   downloadPaymentConfirmationAsPdf,
   downloadPaymentConfirmationHtml,
@@ -14,6 +15,7 @@ import {
   isOutgoingPaymentType,
   startOfLocalDay,
 } from '@/lib/daily-payment-limit'
+import { DEMO_ACCOUNT_NUMBER } from '@/lib/demo-user'
 import { notifyPohybyLive } from '@/lib/pohyby-live'
 import { syncWidgetFromTransactionsApi } from '@/lib/widget'
 
@@ -156,6 +158,8 @@ export default function GeorgePrototypePage() {
     investBalance: 0.00,
     activeTab: 'prehlad',
     transactions: SEED_TRANSACTIONS as Transaction[],
+    /** Sender IBAN for payment receipts — never the legacy fake SK90…98765432. */
+    accountNumber: DEMO_ACCOUNT_NUMBER,
   })
 
   const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>('all')
@@ -183,6 +187,11 @@ export default function GeorgePrototypePage() {
   const [isLoaded, setIsLoaded] = useState(false)
   const [pdfOverlayOpen, setPdfOverlayOpen] = useState(false)
   const [pdfOverlayPhase, setPdfOverlayPhase] = useState<'preparing' | 'done'>('preparing')
+  const [portalReady, setPortalReady] = useState(false)
+
+  useEffect(() => {
+    setPortalReady(true)
+  }, [])
 
   // GEORGE PRIHLASOVACIE STAVY
   const [isSimulatorLoggedIn, setIsSimulatorLoggedIn] = useState(false)
@@ -518,11 +527,17 @@ export default function GeorgePrototypePage() {
               data.accounts?.[0]?.balance !== undefined
                 ? data.accounts[0].balance / 100
                 : undefined
+            const accNumber =
+              typeof data.accounts?.[0]?.accountNumber === 'string' &&
+              data.accounts[0].accountNumber.trim()
+                ? String(data.accounts[0].accountNumber).replace(/\s+/g, '').toUpperCase()
+                : undefined
             const rawTxns = Array.isArray(data.transactions) ? data.transactions : []
             if (rawTxns.length > 0) {
               setState((prev) => ({
                 ...prev,
                 spaceBalance: accBalance ?? prev.spaceBalance,
+                accountNumber: accNumber ?? prev.accountNumber,
                 transactions: rawTxns.map((t: Partial<Transaction>) => normalizeTransaction(t)),
               }))
               void syncWidgetFromTransactionsApi({
@@ -534,8 +549,12 @@ export default function GeorgePrototypePage() {
               return
             }
             // No txns yet, but seeded demo account balance (CI / ensure-db)
-            if (accBalance !== undefined) {
-              setState((prev) => ({ ...prev, spaceBalance: accBalance }))
+            if (accBalance !== undefined || accNumber) {
+              setState((prev) => ({
+                ...prev,
+                spaceBalance: accBalance ?? prev.spaceBalance,
+                accountNumber: accNumber ?? prev.accountNumber,
+              }))
               void syncWidgetFromTransactionsApi({
                 transactions: [],
                 dailyLimit: data.dailyLimit,
@@ -746,7 +765,7 @@ export default function GeorgePrototypePage() {
       createdAt: createdAtLabel,
       status: 'Štandardný platobný príkaz',
       transferType: 'external',
-      fromAccountNumber: 'SK90 0900 0000 0000 9876 5432',
+      fromAccountNumber: state.accountNumber || DEMO_ACCOUNT_NUMBER,
       recipientName: recipient,
       recipientAccountOrEmail: iban,
       amount: amount.toFixed(2),
@@ -803,7 +822,14 @@ export default function GeorgePrototypePage() {
         return
       }
       if (result.usedHtmlFallback) {
-        showToast('PDF sa nepodarilo vytvoriť — stiahnuté HTML.')
+        const forcedHtml =
+          typeof window !== 'undefined' &&
+          (window as Window & { __GEORGE_FORCE_HTML_RECEIPT__?: boolean })
+            .__GEORGE_FORCE_HTML_RECEIPT__ === true
+        // Keep the payment-success toast when e2e forces HTML; otherwise warn.
+        if (!forcedHtml) {
+          showToast('PDF sa nepodarilo vytvoriť — stiahnuté HTML.')
+        }
       }
     } catch {
       try {
@@ -833,7 +859,7 @@ export default function GeorgePrototypePage() {
         : new Date().toLocaleString('sk-SK'),
       status: 'Štandardný platobný príkaz',
       transferType: 'external',
-      fromAccountNumber: 'SK90 0900 0000 0000 9876 5432',
+      fromAccountNumber: state.accountNumber || DEMO_ACCOUNT_NUMBER,
       recipientName: parsed.recipient || txn.recipient,
       recipientAccountOrEmail:
         txn.iban || parsed.iban || 'SK00 0000 0000 0000 0000 0000',
@@ -1095,6 +1121,7 @@ export default function GeorgePrototypePage() {
       investBalance: 0.0,
       activeTab: 'prehlad',
       transactions: SEED_TRANSACTIONS,
+      accountNumber: DEMO_ACCOUNT_NUMBER,
     })
     setSelectedTransaction(null)
     setTransactionFilter('all')
@@ -1846,6 +1873,7 @@ export default function GeorgePrototypePage() {
   }
 
   return (
+    <>
     <div className="min-h-dvh h-dvh w-full bg-[#030305] text-slate-100 flex flex-col font-sans relative overflow-hidden">
       
       {/* Desktop chrome — only ≥lg; hidden on mobile / PWA standalone */}
@@ -2536,119 +2564,7 @@ export default function GeorgePrototypePage() {
 
         </nav>
 
-        {/* BOTTOM SHEET: NOVÁ PLATBA — fixed to viewport (avoids absolute-in-tall-shell) */}
-        <div
-          id="payment-sheet"
-          className={`fixed inset-0 z-50 flex flex-col justify-end bg-black/75 backdrop-blur-sm transition-opacity duration-300 lg:absolute ${
-            isPaymentSheetOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-          }`}
-          aria-hidden={!isPaymentSheetOpen}
-        >
-          <div
-            onClick={closePaymentSheet}
-            className="absolute inset-0 z-0 cursor-pointer"
-          />
-          
-          <div
-            className={`bg-[#12131b] w-full max-h-[min(92dvh,100%)] overflow-y-auto no-scrollbar rounded-t-[32px] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] border-t border-slate-800 z-10 shadow-2xl relative transition-transform duration-300 ease-out ${
-              isPaymentSheetOpen ? 'translate-y-0' : 'translate-y-full'
-            }`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              className="py-2.5 w-full flex justify-center cursor-pointer touch-manipulation"
-              onClick={closePaymentSheet}
-            >
-              <div className="w-12 h-1.5 bg-slate-600/80 hover:bg-slate-500 rounded-full" />
-            </div>
-            
-            <div className="flex justify-between items-center mb-4 pt-1">
-              <h3 className="text-lg font-bold text-white">Nová platba</h3>
-              <button
-                type="button"
-                onClick={closePaymentSheet}
-                className="w-11 h-11 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800/80 active:scale-95 transition-all touch-manipulation cursor-pointer select-none -mr-2"
-                aria-label="Zavrieť novú platbu"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-bold">Meno príjemcu</label>
-                <input
-                  id="pay-recipient"
-                  type="text"
-                  placeholder="napr. Ján Kováč"
-                  value={payRecipient}
-                  onChange={(e) => setPayRecipient(e.target.value)}
-                  className="w-full bg-[#1b1b26] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-bold">IBAN príjemcu</label>
-                <input
-                  id="pay-iban"
-                  type="text"
-                  placeholder="SK80 0900 0000 0012 3456 7890"
-                  value={payIban}
-                  onChange={(e) => setPayIban(e.target.value)}
-                  className="w-full bg-[#1b1b26] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-mono focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-bold">Suma v EUR (€)</label>
-                  <input
-                    id="pay-amount"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    placeholder="0.00"
-                    value={payAmount}
-                    onChange={(e) => setPayAmount(e.target.value)}
-                    className="w-full bg-[#1b1b26] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-bold">Variabilný symbol</label>
-                  <input
-                    id="pay-vs"
-                    type="number"
-                    placeholder="Nepovinné"
-                    value={payVs}
-                    onChange={(e) => setPayVs(e.target.value)}
-                    className="w-full bg-[#1b1b26] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-bold">Poznámka (max. 20 znakov)</label>
-                <input
-                  id="pay-note"
-                  type="text"
-                  maxLength={20}
-                  placeholder="Nepovinné"
-                  value={payNote}
-                  onChange={(e) => setPayNote(e.target.value.substring(0, 20))}
-                  className="w-full bg-[#1b1b26] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-              
-              <button
-                type="button"
-                onClick={executeMockPayment}
-                className="w-full bg-[#327bf5] hover:bg-blue-600 text-white font-bold py-3.5 rounded-xl text-sm mt-3.5 transition-all active:scale-95 shadow-lg shadow-blue-900/30 touch-manipulation cursor-pointer"
-              >
-                Autorizovať cez George kľúč
-              </button>
-            </div>
-          </div>
-        </div>
+        {/* payment-sheet is portaled to document.body — see end of component */}
 
         {/* DETAIL TRANSAKCIE — fixed to viewport */}
         <div
@@ -2951,5 +2867,139 @@ export default function GeorgePrototypePage() {
       </div>
     </div>
   </div>
+
+    {portalReady
+      ? createPortal(
+          <div
+            id="payment-sheet"
+            data-testid="payment-sheet"
+            className={`fixed inset-0 z-[200] bg-black/75 backdrop-blur-sm transition-opacity duration-300 ${
+              isPaymentSheetOpen
+                ? 'opacity-100 pointer-events-auto'
+                : 'opacity-0 pointer-events-none'
+            }`}
+            aria-hidden={!isPaymentSheetOpen}
+          >
+            <div
+              onClick={closePaymentSheet}
+              className="absolute inset-0 z-0 cursor-pointer"
+              aria-hidden
+            />
+
+            <div
+              data-testid="payment-sheet-panel"
+              className={`absolute inset-0 z-10 flex h-dvh max-h-dvh w-full flex-col overflow-hidden bg-[#12131b] pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-300 ease-out ${
+                isPaymentSheetOpen ? 'translate-y-0' : 'translate-y-full'
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                className="py-2.5 w-full flex justify-center cursor-pointer touch-manipulation shrink-0 px-6"
+                onClick={closePaymentSheet}
+              >
+                <div className="w-12 h-1.5 bg-slate-600/80 hover:bg-slate-500 rounded-full" />
+              </div>
+
+              <div className="flex justify-between items-center mb-4 pt-1 shrink-0 px-6">
+                <h3 className="text-lg font-bold text-white">Nová platba</h3>
+                <button
+                  type="button"
+                  onClick={closePaymentSheet}
+                  className="w-11 h-11 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800/80 active:scale-95 transition-all touch-manipulation cursor-pointer select-none -mr-2"
+                  aria-label="Zavrieť novú platbu"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-4 overflow-y-auto no-scrollbar flex-1 min-h-0 px-6">
+                <div>
+                  <label className="block text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-bold">
+                    Meno príjemcu
+                  </label>
+                  <input
+                    id="pay-recipient"
+                    type="text"
+                    placeholder="napr. Ján Kováč"
+                    value={payRecipient}
+                    onChange={(e) => setPayRecipient(e.target.value)}
+                    className="w-full bg-[#1b1b26] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-bold">
+                    IBAN príjemcu
+                  </label>
+                  <input
+                    id="pay-iban"
+                    type="text"
+                    placeholder="SK80 0900 0000 0012 3456 7890"
+                    value={payIban}
+                    onChange={(e) => setPayIban(e.target.value)}
+                    className="w-full bg-[#1b1b26] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white font-mono focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-bold">
+                      Suma v EUR (€)
+                    </label>
+                    <input
+                      id="pay-amount"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      placeholder="0.00"
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      className="w-full bg-[#1b1b26] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-bold">
+                      Variabilný symbol
+                    </label>
+                    <input
+                      id="pay-vs"
+                      type="number"
+                      placeholder="Nepovinné"
+                      value={payVs}
+                      onChange={(e) => setPayVs(e.target.value)}
+                      className="w-full bg-[#1b1b26] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-bold">
+                    Poznámka (max. 20 znakov)
+                  </label>
+                  <input
+                    id="pay-note"
+                    type="text"
+                    maxLength={20}
+                    placeholder="Nepovinné"
+                    value={payNote}
+                    onChange={(e) => setPayNote(e.target.value.substring(0, 20))}
+                    className="w-full bg-[#1b1b26] border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={executeMockPayment}
+                  className="w-full bg-[#327bf5] hover:bg-blue-600 text-white font-bold py-3.5 rounded-xl text-sm mt-3.5 mb-2 transition-all active:scale-95 shadow-lg shadow-blue-900/30 touch-manipulation cursor-pointer"
+                >
+                  Autorizovať cez George kľúč
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null}
+    </>
   )
 }

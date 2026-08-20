@@ -693,6 +693,7 @@ export async function buildPaymentConfirmationPdfBlob(
 /**
  * Convert HTML confirmation → PDF and deliver via share/download.
  * On canvas/PDF failure, falls back to HTML download.
+ * E2E can force HTML via `window.__GEORGE_FORCE_HTML_RECEIPT__ = true`.
  */
 export async function downloadPaymentConfirmationAsPdf(
   data: PaymentConfirmationPdfData
@@ -701,7 +702,14 @@ export async function downloadPaymentConfirmationAsPdf(
     return { ok: false }
   }
 
+  const forceHtml =
+    (window as Window & { __GEORGE_FORCE_HTML_RECEIPT__?: boolean }).__GEORGE_FORCE_HTML_RECEIPT__ ===
+    true
+
   try {
+    if (forceHtml) {
+      throw new Error('forced HTML receipt for e2e')
+    }
     const { blob, filename } = await buildPaymentConfirmationPdfBlob(data)
     await deliverBlobFile(blob, filename, 'application/pdf')
     return { ok: true, blob, filename }

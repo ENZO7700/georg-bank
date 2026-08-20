@@ -2,6 +2,10 @@ import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import path from 'path'
 import { loginWithPin } from './helpers/dashboard2'
+import { DEMO_ACCOUNT_NUMBER, LEGACY_FAKE_SENDER_IBAN } from '../lib/demo-user'
+
+/** Demo SPACE (…5678) or guest (…5679) — both are real seeded accounts, never the SK90 fake. */
+const REAL_SENDER_IBAN_RE = /^SK310900000000501234567[89]$/
 
 /**
  * E2E: vyplnenie platby na /dashboard2 → Autorizovať cez George kľúč
@@ -18,7 +22,42 @@ const PAYMENT = {
 test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test('vyplní platbu, autorizuje George kľúčom a overí PDF download', async ({ page }) => {
+  test('Nová platba sheet je hneď vo viewporte (100dvh, bez scrollu)', async ({ page }) => {
+    await loginWithPin(page)
+    await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible()
+
+    const scrollBefore = await page.evaluate(() => window.scrollY)
+    await page.getByRole('button', { name: /Nová platba/i }).click()
+
+    const sheet = page.getByTestId('payment-sheet')
+    const panel = page.getByTestId('payment-sheet-panel')
+    const heading = page.getByRole('heading', { name: 'Nová platba' })
+
+    await expect(sheet).toBeVisible({ timeout: 10000 })
+    await expect(heading).toBeVisible()
+
+    const vp = page.viewportSize()
+    expect(vp).toBeTruthy()
+
+    // Wait for slide-up transition to finish (panel flush with viewport top).
+    await expect
+      .poll(async () => (await panel.boundingBox())?.y ?? 999, {
+        timeout: 5000,
+        intervals: [50, 100, 150],
+      })
+      .toBeLessThan(8)
+
+    const headingBox = await heading.boundingBox()
+    const panelBox = await panel.boundingBox()
+    expect(headingBox).toBeTruthy()
+    expect(panelBox).toBeTruthy()
+    expect(headingBox!.y).toBeGreaterThanOrEqual(0)
+    expect(headingBox!.y).toBeLessThan(vp!.height)
+    expect(panelBox!.height).toBeGreaterThan(vp!.height * 0.9)
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore)
+  })
+
+  test('vyplní platbu, autorizuje George kľúčom a overí PDF download + IBAN', async ({ page }) => {
     // Force <a download> (bez Web Share sheetu v headless)
     await page.addInitScript(() => {
       const nav = navigator as Navigator & {
@@ -76,9 +115,13 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
       expect(magic).toBe('%PDF')
     } else {
       const html = fs.readFileSync(tempPath, 'utf8')
+      const compact = html.replace(/\s+/g, '')
       expect(html).toMatch(/<!DOCTYPE html>/i)
       expect(html).toMatch(/Mária Nováková|Maria Novakova/i)
       expect(html).toMatch(/0[,.]25/)
+      expect(compact).toMatch(/SK310900000000501234567[89]/)
+      expect(compact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
+      expect(compact).toContain(PAYMENT.iban)
     }
 
     fs.unlinkSync(tempPath)
@@ -88,6 +131,61 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
     await expect(
       page.getByTestId('receipts-sandbox-list').getByText(PAYMENT.recipient).first()
     ).toBeVisible({ timeout: 15000 })
+  })
+
+  test('HTML receipt obsahuje reálny sender IBAN (nie fake SK90…)', async ({ page }) => {
+    await page.addInitScript(() => {
+      const nav = navigator as Navigator & {
+        canShare?: (d?: ShareData) => boolean
+        share?: () => Promise<void>
+      }
+      nav.canShare = () => false
+      nav.share = async () => {
+        throw new Error('share disabled in e2e')
+      }
+      ;(window as Window & { __GEORGE_FORCE_HTML_RECEIPT__?: boolean }).__GEORGE_FORCE_HTML_RECEIPT__ =
+        true
+    })
+
+    await loginWithPin(page)
+
+    await page.getByRole('button', { name: /Nová platba/i }).click()
+    await expect(page.getByRole('heading', { name: 'Nová platba' })).toBeVisible({ timeout: 10000 })
+
+    // Tiny amount — survives prior suite drains of the demo balance.
+    await page.locator('#pay-recipient').fill('IBAN Check')
+    await page.locator('#pay-iban').fill(PAYMENT.iban)
+    await page.locator('#pay-amount').fill('0.01')
+    await page.locator('#pay-vs').fill('99001122')
+    await page.locator('#pay-note').fill('iban chk')
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 45000 })
+    await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
+
+    await expect(page.getByTestId('pdf-generate-overlay')).toBeVisible({ timeout: 20000 })
+
+    const download = await downloadPromise
+    const filename = download.suggestedFilename()
+    expect(filename).toMatch(/\.html$/i)
+
+    const tempPath = path.join(
+      __dirname,
+      '..',
+      `tmp-iban-check-${Date.now()}-${Math.random().toString(36).slice(2)}.html`
+    )
+    await download.saveAs(tempPath)
+    const html = fs.readFileSync(tempPath, 'utf8')
+    const compact = html.replace(/\s+/g, '')
+    const senderMatch = compact.match(/SK310900000000501234567[89]/)
+    expect(senderMatch, 'sender IBAN must be seeded demo/guest account').toBeTruthy()
+    expect(REAL_SENDER_IBAN_RE.test(senderMatch![0])).toBe(true)
+    expect(compact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
+    expect(compact).not.toMatch(/SK90.*98765432/)
+    expect(compact).toContain(PAYMENT.iban)
+    expect(html).toMatch(/IBAN Check/i)
+    // Demo constant may differ from guest IBAN used in CI — both OK if real.
+    expect([DEMO_ACCOUNT_NUMBER, 'SK3109000000005012345679']).toContain(senderMatch![0])
+    fs.unlinkSync(tempPath)
   })
 
   test('prázdny formulár nespustí download', async ({ page }) => {
