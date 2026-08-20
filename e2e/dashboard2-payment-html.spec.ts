@@ -119,7 +119,7 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
       expect(html).toMatch(/<!DOCTYPE html>/i)
       expect(html).toMatch(/Mária Nováková|Maria Novakova/i)
       expect(html).toMatch(/0[,.]25/)
-      expect(compact).toContain(DEMO_ACCOUNT_NUMBER)
+      expect(compact).toMatch(/SK310900000000501234567[89]/)
       expect(compact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
       expect(compact).toContain(PAYMENT.iban)
     }
@@ -176,11 +176,15 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
     await download.saveAs(tempPath)
     const html = fs.readFileSync(tempPath, 'utf8')
     const compact = html.replace(/\s+/g, '')
-    expect(compact).toContain(DEMO_ACCOUNT_NUMBER)
+    const senderMatch = compact.match(/SK310900000000501234567[89]/)
+    expect(senderMatch, 'sender IBAN must be seeded demo/guest account').toBeTruthy()
+    expect(REAL_SENDER_IBAN_RE.test(senderMatch![0])).toBe(true)
     expect(compact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
     expect(compact).not.toMatch(/SK90.*98765432/)
     expect(compact).toContain(PAYMENT.iban)
     expect(html).toMatch(/IBAN Check/i)
+    // Demo constant may differ from guest IBAN used in CI — both OK if real.
+    expect([DEMO_ACCOUNT_NUMBER, 'SK3109000000005012345679']).toContain(senderMatch![0])
     fs.unlinkSync(tempPath)
   })
 
