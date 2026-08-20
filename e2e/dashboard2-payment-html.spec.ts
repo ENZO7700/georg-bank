@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'fs'
 import path from 'path'
 import { loginWithPin } from './helpers/dashboard2'
+import { DEMO_ACCOUNT_NUMBER, LEGACY_FAKE_SENDER_IBAN } from '../lib/demo-user'
 
 /**
  * E2E: vyplnenie platby na /dashboard2 → Autorizovať cez George kľúč
@@ -17,6 +18,35 @@ const PAYMENT = {
 
 test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
+
+  test('Nová platba sheet je hneď vo viewporte (100dvh, bez scrollu)', async ({ page }) => {
+    await loginWithPin(page)
+    await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible()
+
+    const scrollBefore = await page.evaluate(() => window.scrollY)
+    await page.getByRole('button', { name: /Nová platba/i }).click()
+
+    const sheet = page.getByTestId('payment-sheet')
+    const panel = page.getByTestId('payment-sheet-panel')
+    const heading = page.getByRole('heading', { name: 'Nová platba' })
+
+    await expect(sheet).toBeVisible({ timeout: 10000 })
+    await expect(heading).toBeVisible()
+
+    const vp = page.viewportSize()
+    expect(vp).toBeTruthy()
+    const headingBox = await heading.boundingBox()
+    const panelBox = await panel.boundingBox()
+    expect(headingBox).toBeTruthy()
+    expect(panelBox).toBeTruthy()
+    expect(headingBox!.y).toBeGreaterThanOrEqual(0)
+    expect(headingBox!.y).toBeLessThan(vp!.height)
+    // Full-height bottom sheet (~100dvh)
+    expect(panelBox!.height).toBeGreaterThan(vp!.height * 0.9)
+    // Opening must not require page scroll to discover the sheet
+    const scrollAfter = await page.evaluate(() => window.scrollY)
+    expect(scrollAfter).toBe(scrollBefore)
+  })
 
   test('vyplní platbu, autorizuje George kľúčom a overí PDF download', async ({ page }) => {
     // Force <a download> (bez Web Share sheetu v headless)
@@ -46,6 +76,14 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
     await page.locator('#pay-note').fill(PAYMENT.note)
 
     const downloadPromise = page.waitForEvent('download', { timeout: 45000 })
+    const persistPromise = page.waitForResponse(
+      (r) =>
+        r.url().includes('/api/transactions') &&
+        r.request().method() === 'POST' &&
+        r.status() < 500,
+      { timeout: 45000 }
+    )
+
     await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
 
     // Overlay + toast appear right after DB write — assert before long PDF convert.
@@ -54,7 +92,16 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
       timeout: 10000,
     })
 
-    const download = await downloadPromise
+    const [download, persistRes] = await Promise.all([downloadPromise, persistPromise])
+    expect(persistRes.ok(), `POST /api/transactions → ${persistRes.status()}`).toBe(true)
+    const persistBody = (await persistRes.json().catch(() => null)) as {
+      success?: boolean
+      transaction?: { id?: string }
+    } | null
+    expect(persistBody?.success).toBe(true)
+    const txnId = persistBody?.transaction?.id
+    expect(txnId).toBeTruthy()
+
     const filename = download.suggestedFilename()
     // Prefer PDF; HTML fallback is still acceptable if canvas fails in CI.
     expect(filename).toMatch(/^potvrdenie-.*\.(pdf|html)$/i)
@@ -76,10 +123,26 @@ test.describe('dashboard2 – vyplnenie platby + PDF potvrdenie', () => {
       expect(magic).toBe('%PDF')
     } else {
       const html = fs.readFileSync(tempPath, 'utf8')
+      const compact = html.replace(/\s+/g, '')
       expect(html).toMatch(/<!DOCTYPE html>/i)
       expect(html).toMatch(/Mária Nováková|Maria Novakova/i)
       expect(html).toMatch(/0[,.]25/)
+      expect(compact).toContain(DEMO_ACCOUNT_NUMBER)
+      expect(compact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
+      expect(compact).toContain(PAYMENT.iban)
     }
+
+    // Server-rendered confirmation must use real sender IBAN (covers PDF path too).
+    const confRes = await page.request.get(
+      `/api/export/payment-confirmation?transactionId=${encodeURIComponent(txnId!)}`
+    )
+    expect(confRes.ok()).toBe(true)
+    const confHtml = await confRes.text()
+    const confCompact = confHtml.replace(/\s+/g, '')
+    expect(confCompact).toContain(DEMO_ACCOUNT_NUMBER)
+    expect(confCompact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
+    expect(confCompact).toContain(PAYMENT.iban)
+    expect(confHtml).toContain(PAYMENT.recipient)
 
     fs.unlinkSync(tempPath)
 

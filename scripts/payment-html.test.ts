@@ -8,13 +8,17 @@ import {
   getPaymentConfirmationFilename,
   type PaymentConfirmationPdfData,
 } from '../lib/payment-confirmation-pdf'
+import {
+  DEMO_ACCOUNT_NUMBER,
+  LEGACY_FAKE_SENDER_IBAN,
+} from '../lib/demo-user'
 
 const data: PaymentConfirmationPdfData = {
   transactionId: 'mock-test-001',
   createdAt: '17.07.2026 15:30:00',
   status: 'Štandardný platobný príkaz',
   transferType: 'external',
-  fromAccountNumber: 'SK9009000000000098765432',
+  fromAccountNumber: DEMO_ACCOUNT_NUMBER,
   recipientName: 'Mária Nováková',
   recipientAccountOrEmail: 'SK8090000000001234567890',
   amount: '0.25',
@@ -35,6 +39,7 @@ const data: PaymentConfirmationPdfData = {
 const html = generatePaymentConfirmationHtml(data)
 const filenameHtml = getPaymentConfirmationFilename(data, 'html')
 const filenamePdf = getPaymentConfirmationFilename(data, 'pdf')
+const htmlCompact = html.replace(/\s+/g, '')
 
 assert.match(filenameHtml, /\.html$/i, 'filename ends with .html')
 assert.match(filenamePdf, /\.pdf$/i, 'pdf filename ends with .pdf')
@@ -47,10 +52,23 @@ assert.ok(html.includes('Mária Nováková'), 'recipient name')
 assert.ok(html.includes('Test HTML'), 'note in HTML')
 // VS is encoded in filename; body has note, amount, IBAN, name
 assert.ok(/0[,.]25/.test(html), 'amount 0.25 in HTML')
-assert.ok(html.replace(/\s+/g, '').includes('SK8090000000001234567890'), 'recipient IBAN')
+assert.ok(htmlCompact.includes('SK8090000000001234567890'), 'recipient IBAN')
+assert.ok(
+  htmlCompact.includes(DEMO_ACCOUNT_NUMBER),
+  'sender IBAN is real demo account (SK31…5012345678)'
+)
+assert.ok(
+  !htmlCompact.includes(LEGACY_FAKE_SENDER_IBAN),
+  'legacy fake sender IBAN SK90…98765432 must not appear'
+)
+assert.ok(
+  !htmlCompact.includes('SK9009000000000098765432'),
+  'unspaced fake sender IBAN must not appear'
+)
 assert.ok(html.length > 1000, 'HTML is substantial')
 
 console.log('payment-html unit tests passed')
 console.log('  file html:', filenameHtml)
 console.log('  file pdf:', filenamePdf)
 console.log('  html bytes:', html.length)
+console.log('  sender IBAN:', DEMO_ACCOUNT_NUMBER)

@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
+  DEMO_ACCOUNT_NUMBER,
   DEMO_DEFAULT_USER_EMAIL,
   DEMO_DEFAULT_USER_ID,
   DEMO_DEFAULT_USER_LEGACY_IDS,
@@ -21,8 +22,6 @@ import {
   isManualTopupType,
   msUntilAutoRefillAllowed,
 } from '@/lib/topup-rules'
-
-const DEMO_ACCOUNT_NUMBER = 'SK3109000000005012345678'
 
 type BankAccountRow = {
   id: string

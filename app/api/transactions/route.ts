@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { transaction, bankAccount, user } from '@/lib/db/schema'
 import {
+  DEMO_ACCOUNT_NUMBER,
   DEMO_DEFAULT_USER_EMAIL,
   DEMO_DEFAULT_USER_ID,
   DEMO_DEFAULT_USER_LEGACY_IDS,
@@ -213,7 +214,6 @@ export async function POST(req: Request) {
     }
 
     // Find or create default bank account (reclaim legacy Filip / shared demo IBAN)
-    const DEMO_ACCOUNT_NUMBER = 'SK3109000000005012345678'
     let accountRecord = await db.query.bankAccount.findFirst({
       where: (t, { eq }) => eq(t.userId, defaultUserId),
     })

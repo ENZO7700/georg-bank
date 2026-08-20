@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { gotoAbsolute } from './helpers/app'
 import { loginWithPin } from './helpers/dashboard2'
+import { DEMO_ACCOUNT_NUMBER, LEGACY_FAKE_SENDER_IBAN } from '../lib/demo-user'
 
 const GEORGE_URL = (process.env.GEORGE_URL ?? 'https://george-91165977.vercel.app').replace(
   /\/$/,
@@ -55,14 +56,18 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
     }
   })
 
-  test('george: PIN → platba → HTML potvrdenie + história + DB POST', async ({ page }) => {
+  test('george: PIN → platba → PDF/HTML potvrdenie + IBAN + história + DB POST', async ({
+    page,
+  }) => {
     await disableWebShare(page)
 
     // Prove we hit production, not localhost
     const gateOrApp = page.waitForResponse(
       (r) =>
         r.url().startsWith(GEORGE_URL) &&
-        (r.url().includes('/dashboard2') || r.url().includes('/api/auth/guest') || r.url().includes('/gate')),
+        (r.url().includes('/dashboard2') ||
+          r.url().includes('/api/auth/guest') ||
+          r.url().includes('/gate')),
       { timeout: 45000 }
     )
     await loginWithPin(page, '666666', { origin: GEORGE_URL })
@@ -72,10 +77,18 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
     await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible()
     await expect(page.locator('#payment-history')).toBeVisible({ timeout: 15000 })
 
+    const scrollBefore = await page.evaluate(() => window.scrollY)
     await page.getByRole('button', { name: /Nová platba/i }).click()
     await expect(page.getByRole('heading', { name: 'Nová platba' })).toBeVisible({
       timeout: 15000,
     })
+    const headingBox = await page.getByRole('heading', { name: 'Nová platba' }).boundingBox()
+    const vp = page.viewportSize()
+    expect(headingBox).toBeTruthy()
+    expect(vp).toBeTruthy()
+    expect(headingBox!.y).toBeGreaterThanOrEqual(0)
+    expect(headingBox!.y).toBeLessThan(vp!.height)
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore)
 
     await page.locator('#pay-recipient').fill(payment.recipient)
     await page.locator('#pay-iban').fill(payment.iban)
@@ -89,7 +102,7 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
     await expect(page.locator('#pay-vs')).toHaveValue(payment.vs)
     await expect(page.locator('#pay-note')).toHaveValue(payment.note)
 
-    // Client HTML download + background Supabase POST — wait for both
+    // Client PDF/HTML download + background Supabase POST — wait for both
     const downloadPromise = page.waitForEvent('download', { timeout: 45000 })
     const persistPromise = page.waitForResponse(
       (r) =>
@@ -101,6 +114,8 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
 
     await page.getByRole('button', { name: /Autorizovať cez George kľúč/i }).click()
 
+    await expect(page.getByTestId('pdf-generate-overlay')).toBeVisible({ timeout: 20000 })
+
     const [download, persistRes] = await Promise.all([downloadPromise, persistPromise])
     expect(persistRes.ok(), `POST /api/transactions → ${persistRes.status()}`).toBe(true)
     const persistBody = (await persistRes.json().catch(() => null)) as {
@@ -109,6 +124,7 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
     } | null
     expect(persistBody?.success).toBe(true)
     expect(persistBody?.transaction?.id).toBeTruthy()
+    const txnId = persistBody!.transaction!.id!
 
     const filename = download.suggestedFilename()
     expect(filename).toMatch(/^potvrdenie-.*\.(pdf|html)$/i)
@@ -130,17 +146,34 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
       expect(magic).toBe('%PDF')
     } else {
       const html = fs.readFileSync(tempPath, 'utf8')
+      const compact = html.replace(/\s+/g, '')
       expect(html).toMatch(/<!DOCTYPE html>/i)
       expect(html).toMatch(/Výpis z Účtu|Potvrdenie o platbe/i)
       expect(html).toMatch(/Peter Novotn[yý]/i)
       expect(html).toContain(payment.recipient)
       expect(html).toMatch(/0[,.]11/)
-      expect(html.replace(/\s+/g, '')).toMatch(/SK8090000000001234567890/i)
+      expect(compact).toMatch(/SK8090000000001234567890/i)
+      expect(compact).toContain(DEMO_ACCOUNT_NUMBER)
+      expect(compact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
       expect(html).toContain(payment.note)
       expect(html).toMatch(/George kľúč|mToken/i)
       expect(html.length).toBeGreaterThan(3000)
     }
     fs.unlinkSync(tempPath)
+
+    // API confirmation: real sender IBAN (works for both PDF and HTML client paths)
+    const confRes = await page.request.get(
+      `${GEORGE_URL}/api/export/payment-confirmation?transactionId=${encodeURIComponent(txnId)}`
+    )
+    expect(confRes.ok(), `payment-confirmation → ${confRes.status()}`).toBe(true)
+    const confHtml = await confRes.text()
+    const confCompact = confHtml.replace(/\s+/g, '')
+    expect(confCompact).toContain(DEMO_ACCOUNT_NUMBER)
+    expect(confCompact).not.toContain(LEGACY_FAKE_SENDER_IBAN)
+    expect(confCompact).not.toMatch(/SK90.*98765432/)
+    expect(confCompact).toContain(payment.iban.replace(/\s+/g, ''))
+    expect(confHtml).toContain(payment.recipient)
+    expect(confHtml).toMatch(/0[,.]11/)
 
     // Unique toast — recipient is unique per run
     await expect(
@@ -162,7 +195,7 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
 
     // eslint-disable-next-line no-console
     console.log(
-      `[safari-smoke] george OK runId=${payment.runId} vs=${payment.vs} htmlBytes=${size} txn=${persistBody?.transaction?.id}`
+      `[safari-smoke] george OK runId=${payment.runId} vs=${payment.vs} bytes=${size} txn=${txnId} pdf=${isPdf}`
     )
   })
 
