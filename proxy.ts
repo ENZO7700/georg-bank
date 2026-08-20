@@ -17,6 +17,8 @@ function shouldSkipAuth(request: NextRequest) {
     pathname.startsWith('/api/auth') ||
     pathname === '/gate' ||
     pathname.startsWith('/api/gate') ||
+    pathname.startsWith('/api/health') ||
+    pathname.startsWith('/api/test-db') ||
     pathname.startsWith('/api/transactions') ||
     pathname.startsWith('/api/receipts') ||
     pathname.startsWith('/api/push') ||
@@ -43,39 +45,38 @@ export function proxy(request: NextRequest) {
   if (isSiteGateEnabled()) {
     const hasGateCookie = request.cookies.get(SITE_GATE_COOKIE)?.value === SITE_GATE_TOKEN
     const isTS = isTailscaleRequest(request)
-
-    if (hasGateCookie || isTS) {
-      return NextResponse.next()
-    }
+    const gateBypassed = hasGateCookie || isTS
 
     // Gate UI + public APIs needed by the main app and live /pohyby ledger.
     // Payments from george-*.vercel.app must reach Supabase so the dashboard can show them.
-    if (
+    const gatePublicPath =
       pathname === '/gate' ||
       pathname.startsWith('/api/gate') ||
+      pathname.startsWith('/api/health') ||
+      pathname.startsWith('/api/test-db') ||
       pathname.startsWith('/api/transactions') ||
       pathname.startsWith('/api/receipts') ||
       pathname.startsWith('/api/push') ||
       pathname.startsWith('/api/debug-ingest') ||
       pathname.startsWith('/api/auth')
-    ) {
-      return NextResponse.next()
-    }
 
-    const gateUrl = request.nextUrl.clone()
-    gateUrl.pathname = '/gate'
-    gateUrl.search = ''
-    const redirectTarget = `${pathname}${search}`
-    if (redirectTarget !== '/') {
-      // Normalize legacy landing to dashboard2 when bouncing via gate
-      const from =
-        redirectTarget === '/dashboard' || redirectTarget.startsWith('/dashboard?')
-          ? '/dashboard2'
-          : redirectTarget
-      gateUrl.searchParams.set('from', from)
-    }
+    if (!gateBypassed && !gatePublicPath) {
+      const gateUrl = request.nextUrl.clone()
+      gateUrl.pathname = '/gate'
+      gateUrl.search = ''
+      const redirectTarget = `${pathname}${search}`
+      if (redirectTarget !== '/') {
+        // Normalize legacy landing to dashboard2 when bouncing via gate
+        const from =
+          redirectTarget === '/dashboard' || redirectTarget.startsWith('/dashboard?')
+            ? '/dashboard2'
+            : redirectTarget
+        gateUrl.searchParams.set('from', from)
+      }
 
-    return NextResponse.redirect(gateUrl)
+      return NextResponse.redirect(gateUrl)
+    }
+    // Tailscale / gate cookie only skips the password gate — still require guest session below.
   }
 
   if (hasSessionCookie(request) || shouldSkipAuth(request)) {

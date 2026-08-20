@@ -1,15 +1,45 @@
 import { betterAuth } from 'better-auth'
 import { pool } from '@/lib/db'
 
-export const auth = betterAuth({
-  database: pool,
-  baseURL:
+function authFallbackUrl(): string | undefined {
+  return (
     process.env.BETTER_AUTH_URL ??
     (process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
       : process.env.VERCEL_URL
         ? `https://${process.env.VERCEL_URL}`
-        : process.env.V0_RUNTIME_URL),
+        : process.env.V0_RUNTIME_URL)
+  )
+}
+
+/**
+ * Dynamic baseURL so Production alias hosts (e.g. george-dev-*.vercel.app)
+ * and per-deployment VERCEL_URL stay aligned with the incoming request.
+ * Guest sign-in must pass request headers (host / x-forwarded-*).
+ */
+const fallback = authFallbackUrl()
+
+export const auth = betterAuth({
+  database: pool,
+  baseURL: {
+    allowedHosts: [
+      'localhost:3030',
+      'localhost:3355',
+      '10.0.2.2:3030',
+      '*.vercel.app',
+      ...(fallback
+        ? (() => {
+            try {
+              return [new URL(fallback).host]
+            } catch {
+              return [] as string[]
+            }
+          })()
+        : []),
+    ],
+    fallback: fallback || 'http://localhost:3030',
+    protocol: 'auto',
+  },
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
@@ -21,6 +51,7 @@ export const auth = betterAuth({
     'http://localhost:3030',
     'http://localhost:3355',
     'http://10.0.2.2:3030',
+    'https://*.vercel.app',
     ...(process.env.V0_RUNTIME_URL ? [process.env.V0_RUNTIME_URL] : []),
     ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
     ...(process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -31,10 +62,12 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day
   },
-  ...(process.env.NODE_ENV === 'development' &&
-  process.env.BETTER_AUTH_URL?.startsWith('https')
-    ? {
-        advanced: {
+  advanced: {
+    // Vercel sets x-forwarded-host / x-forwarded-proto — required for dynamic baseURL.
+    trustedProxyHeaders: true,
+    ...(process.env.NODE_ENV === 'development' &&
+    process.env.BETTER_AUTH_URL?.startsWith('https')
+      ? {
           // In dev (v0 preview iframe over HTTPS), force cross-site cookies
           // so the session cookie is stored by the browser.
           // On plain http://localhost we must NOT set secure: true because
@@ -43,7 +76,7 @@ export const auth = betterAuth({
             sameSite: 'none' as const,
             secure: true,
           },
-        },
-      }
-    : {}),
+        }
+      : {}),
+  },
 })

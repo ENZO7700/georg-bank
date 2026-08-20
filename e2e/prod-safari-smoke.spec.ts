@@ -5,11 +5,15 @@ import { gotoAbsolute } from './helpers/app'
 import { loginWithPin } from './helpers/dashboard2'
 import { DEMO_ACCOUNT_NUMBER, LEGACY_FAKE_SENDER_IBAN } from '../lib/demo-user'
 
-const GEORGE_URL = (process.env.GEORGE_URL ?? 'https://george-91165977.vercel.app').replace(
-  /\/$/,
-  ''
-)
-const POHYBY_URL = (process.env.POHYBY_URL ?? 'https://pohyby-408735.vercel.app').replace(/\/$/, '')
+const GEORGE_URL = (
+  process.env.GEORGE_URL ?? 'https://george-dev-viandmos-projects.vercel.app'
+).replace(/\/$/, '')
+const POHYBY_URL = (
+  process.env.POHYBY_URL ?? 'https://george-dev-viandmos-projects.vercel.app'
+).replace(/\/$/, '')
+
+const GEORGE_HOST = new URL(GEORGE_URL).host
+const POHYBY_HOST = new URL(POHYBY_URL).host
 
 const IBAN = 'SK8090000000001234567890'
 const AMOUNT = '0.11'
@@ -75,7 +79,7 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
     )
     await loginWithPin(page, '666666', { origin: GEORGE_URL })
     const bootRes = await gateOrApp
-    expect(bootRes.url()).toContain('george-91165977.vercel.app')
+    expect(bootRes.url()).toContain(GEORGE_HOST)
 
     await expect(page.getByRole('heading', { name: 'Prehľad', exact: true })).toBeVisible()
     await expect(page.locator('#payment-history')).toBeVisible({ timeout: 15000 })
@@ -208,7 +212,7 @@ test.describe.serial('Safari prod smoke – platba + pohyby', () => {
     )
 
     await gotoAbsolute(page, `${POHYBY_URL}/pohyby`)
-    expect(page.url()).toContain('pohyby-408735.vercel.app')
+    expect(page.url()).toContain(POHYBY_HOST)
 
     await expect(page.getByRole('heading', { name: 'Pohyby na účte' })).toBeVisible({
       timeout: 20000,
