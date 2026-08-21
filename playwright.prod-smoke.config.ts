@@ -16,6 +16,10 @@ export default defineConfig({
     video: 'retain-on-failure',
     actionTimeout: 25000,
     navigationTimeout: 45000,
+    extraHTTPHeaders: {
+      // Bypass site gate when SITE_GATE_ENABLED=true (guest session still required).
+      'X-Tailscale-User-Login': 'playwright-e2e',
+    },
     ...devices['Desktop Chrome'],
   },
 })

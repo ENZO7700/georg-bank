@@ -1,4 +1,6 @@
 import { auth } from '@/lib/auth'
+import { pool } from '@/lib/db'
+import { resolveDatabaseUrl } from '@/lib/db/resolve-database-url'
 import {
   GUEST_USER_EMAIL,
   GUEST_USER_NAME,
@@ -22,15 +24,49 @@ function copyAuthCookies(source: Response, target: NextResponse) {
   }
 }
 
+/**
+ * Better Auth dynamic baseURL needs host / x-forwarded-* from the real request.
+ * Stripping to cookie+origin alone breaks resolution on Vercel aliases.
+ */
 function serverAuthHeaders(request: NextRequest) {
-  const headers = new Headers()
-  const cookie = request.headers.get('cookie')
-  if (cookie) headers.set('cookie', cookie)
-
-  const origin = request.nextUrl.origin
-  headers.set('origin', origin)
+  const headers = new Headers(request.headers)
+  headers.set('origin', request.nextUrl.origin)
   headers.set('content-type', 'application/json')
+  if (!headers.get('host')) {
+    headers.set('host', request.nextUrl.host)
+  }
   return headers
+}
+
+async function probeDatabase(): Promise<{ ok: boolean; detail: string }> {
+  const resolved = resolveDatabaseUrl()
+  if (!resolved) {
+    return {
+      ok: false,
+      detail: 'No DATABASE_URL / SUPABASE_* connection configured',
+    }
+  }
+  try {
+    const client = await pool.connect()
+    try {
+      await client.query('SELECT 1')
+    } finally {
+      client.release()
+    }
+    return { ok: true, detail: 'ok' }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { ok: false, detail: message }
+  }
+}
+
+function guestFailureHtml(hint: string) {
+  return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Prihlásenie</title>
+<style>body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;background:#030305;color:#e2e8f0;font-family:system-ui,sans-serif;padding:24px;text-align:center}
+a{color:#60a5fa}code{font-size:12px;color:#94a3b8}</style></head><body><div><p>Nepodarilo sa automaticky prihlásiť.</p>
+<p style="color:#94a3b8;font-size:14px">Skontrolujte DATABASE_URL a BETTER_AUTH_* na Vercel.</p>
+<p><code>${hint.replace(/</g, '&lt;').slice(0, 180)}</code></p>
+<p><a href="/sign-in">Prihlásiť sa manuálne</a> · <a href="/gate">Späť na bránu</a></p></div></body></html>`
 }
 
 async function ensureGuestSignedIn(request: NextRequest) {
@@ -43,6 +79,15 @@ async function ensureGuestSignedIn(request: NextRequest) {
       status: 500,
       headers: { 'content-type': 'application/json' },
     })
+  }
+
+  const dbProbe = await probeDatabase()
+  if (!dbProbe.ok) {
+    console.error('[guest-auth] database unreachable:', dbProbe.detail)
+    return new Response(
+      JSON.stringify({ error: 'Database unreachable', detail: dbProbe.detail }),
+      { status: 500, headers: { 'content-type': 'application/json' } }
+    )
   }
 
   const headers = serverAuthHeaders(request)
@@ -60,7 +105,9 @@ async function ensureGuestSignedIn(request: NextRequest) {
   if (response.ok) return response
 
   const { ensureDatabase } = await import('@/scripts/ensure-db')
-  await ensureDatabase().catch(() => undefined)
+  await ensureDatabase().catch((error) => {
+    console.error('[guest-auth] ensureDatabase failed:', error)
+  })
 
   const signUpResponse = await auth.api.signUpEmail({
     body: {
@@ -101,21 +148,25 @@ export async function GET(request: NextRequest) {
     if (!authResponse.ok) {
       const body = await authResponse.text().catch(() => '')
       console.error('[guest-auth] sign-in failed:', authResponse.status, body)
+      const hint =
+        (() => {
+          try {
+            const parsed = JSON.parse(body) as { detail?: string; error?: string }
+            return parsed.detail || parsed.error || `HTTP ${authResponse.status}`
+          } catch {
+            return body.slice(0, 120) || `HTTP ${authResponse.status}`
+          }
+        })()
       // GET guest is always a browser navigation → never return blank JSON.
       const accept = request.headers.get('accept') || ''
       if (accept.includes('text/html') || accept.includes('*/*') || !accept) {
-        const html = `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Prihlásenie</title>
-<style>body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;background:#030305;color:#e2e8f0;font-family:system-ui,sans-serif;padding:24px;text-align:center}
-a{color:#60a5fa}</style></head><body><div><p>Nepodarilo sa automaticky prihlásiť.</p>
-<p style="color:#94a3b8;font-size:14px">Skontrolujte DATABASE_URL a BETTER_AUTH_* na Vercel.</p>
-<p><a href="/sign-in">Prihlásiť sa manuálne</a> · <a href="/gate">Späť na bránu</a></p></div></body></html>`
-        return new NextResponse(html, {
+        return new NextResponse(guestFailureHtml(hint), {
           status: 500,
           headers: { 'content-type': 'text/html; charset=utf-8' },
         })
       }
       return NextResponse.json(
-        { error: 'Nepodarilo sa automaticky prihlásiť.' },
+        { error: 'Nepodarilo sa automaticky prihlásiť.', detail: hint },
         { status: 500 }
       )
     }
@@ -126,20 +177,16 @@ a{color:#60a5fa}</style></head><body><div><p>Nepodarilo sa automaticky prihlási
     return response
   } catch (error) {
     console.error('[guest-auth] unexpected error:', error)
+    const hint = error instanceof Error ? error.message : 'unexpected'
     const accept = request.headers.get('accept') || ''
     if (accept.includes('text/html') || accept.includes('*/*') || !accept) {
-      const html = `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Prihlásenie</title>
-<style>body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;background:#030305;color:#e2e8f0;font-family:system-ui,sans-serif;padding:24px;text-align:center}
-a{color:#60a5fa}</style></head><body><div><p>Nepodarilo sa automaticky prihlásiť.</p>
-<p style="color:#94a3b8;font-size:14px">Databáza alebo auth nie sú dostupné. Skús znova neskôr.</p>
-<p><a href="/sign-in">Prihlásiť sa manuálne</a> · <a href="/dashboard2">Skúsiť dashboard</a></p></div></body></html>`
-      return new NextResponse(html, {
+      return new NextResponse(guestFailureHtml(hint), {
         status: 500,
         headers: { 'content-type': 'text/html; charset=utf-8' },
       })
     }
     return NextResponse.json(
-      { error: 'Nepodarilo sa automaticky prihlásiť.' },
+      { error: 'Nepodarilo sa automaticky prihlásiť.', detail: hint },
       { status: 500 }
     )
   }

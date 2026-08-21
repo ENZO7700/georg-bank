@@ -14,3 +14,11 @@ playwright/.auth/
 public/pdfs/
 .cursor/
 *.pdf
+# Secrets / local env (never commit)
+.env
+.env.*
+!.env.example
+secr.md
+secrets.md
+dokumenty/secrets/
+.env.local.bak*
