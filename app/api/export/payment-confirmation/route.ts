@@ -39,7 +39,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
-    if (txn.type !== 'withdrawal' && txn.type !== 'transfer') {
+    const OUTGOING_TYPES = ['withdrawal', 'transfer', 'outgoing']
+    if (!OUTGOING_TYPES.includes(txn.type)) {
       return NextResponse.json({ error: 'Confirmation available only for outgoing payments' }, { status: 400 })
     }
 
